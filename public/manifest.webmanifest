@@ -1,0 +1,26 @@
+{
+    "name": "Ziarah Al Azhar Memorial Garden",
+    "short_name": "Ziarah AMG",
+    "description": "Pemesanan kunjungan ziarah Al Azhar Memorial Garden.",
+    "lang": "id",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#FFFFFF",
+    "theme_color": "#1796C7",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "/icons/pwa-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/icons/pwa-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

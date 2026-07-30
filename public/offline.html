@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="id">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#1796C7">
+        <title>Anda sedang offline | Ziarah AMG</title>
+        <style>
+            * { box-sizing: border-box; }
+            body {
+                min-height: 100vh;
+                margin: 0;
+                display: grid;
+                place-items: center;
+                padding: 24px;
+                color: #172746;
+                background: #f8fafc;
+                font: 16px/1.5 system-ui, sans-serif;
+            }
+            main {
+                width: min(100%, 420px);
+                padding: 28px;
+                border: 1px solid #cbd5e1;
+                border-radius: 12px;
+                background: #fff;
+                text-align: center;
+            }
+            h1 { margin: 0; font-size: 1.35rem; }
+            p { margin: 12px 0 20px; color: #475569; }
+            button {
+                min-height: 44px;
+                border: 0;
+                border-radius: 8px;
+                padding: 10px 18px;
+                color: #fff;
+                background: #1796c7;
+                font: inherit;
+                font-weight: 600;
+                cursor: pointer;
+            }
+            button:focus-visible {
+                outline: 3px solid #172746;
+                outline-offset: 3px;
+            }
+        </style>
+    </head>
+    <body>
+        <main>
+            <h1>Anda sedang offline</h1>
+            <p>
+                Data ketersediaan dan booking memerlukan koneksi internet
+                agar selalu akurat.
+            </p>
+            <button type="button" onclick="location.reload()">Coba lagi</button>
+        </main>
+    </body>
+</html>
