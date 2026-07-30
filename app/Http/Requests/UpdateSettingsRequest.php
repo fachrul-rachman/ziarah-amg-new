@@ -2,8 +2,10 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Setting;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class UpdateSettingsRequest extends FormRequest
@@ -17,8 +19,24 @@ class UpdateSettingsRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'booking_window_days' => [
+                'required',
+                'integer',
+                'between:1,100',
+            ],
+            'booking_limit_mode' => [
+                'required',
+                Rule::in([Setting::LIMIT_DAILY, Setting::LIMIT_HOURLY]),
+            ],
             'daily_booking_limit' => [
                 'required',
+                'integer',
+                'min:1',
+                'max:4294967295',
+            ],
+            'hourly_booking_limit' => [
+                'nullable',
+                'required_if:booking_limit_mode,'.Setting::LIMIT_HOURLY,
                 'integer',
                 'min:1',
                 'max:4294967295',

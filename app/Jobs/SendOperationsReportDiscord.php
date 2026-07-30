@@ -52,7 +52,10 @@ class SendOperationsReportDiscord implements ShouldQueue
         $path = null;
 
         try {
-            $path = $excelExport->writeTemporary($dispatch->bookings()->cursor());
+            $path = $excelExport->writeTemporary(
+                $dispatch->bookings()->cursor(),
+                $dispatch->report_date->toDateString(),
+            );
             $filename = "laporan-ziarah-{$dispatch->report_date->toDateString()}-{$dispatch->period->value}.xlsx";
             $fileContents = file_get_contents($path);
 

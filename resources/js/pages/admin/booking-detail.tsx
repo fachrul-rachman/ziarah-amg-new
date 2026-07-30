@@ -220,8 +220,9 @@ export default function BookingDetail({ booking, zones, time_slots }: Props) {
                                     <input
                                         id="chair-count"
                                         type="number"
-                                        min="2"
-                                        max="6"
+                                        min="0"
+                                        max="500"
+                                        step="1"
                                         value={form.data.chair_count}
                                         disabled={disabled}
                                         onChange={(event) =>

@@ -55,7 +55,10 @@ class SendOperationsReportEmail implements ShouldQueue
         $path = null;
 
         try {
-            $path = $excelExport->writeTemporary($dispatch->bookings()->cursor());
+            $path = $excelExport->writeTemporary(
+                $dispatch->bookings()->cursor(),
+                $dispatch->report_date->toDateString(),
+            );
             Mail::to($email)->send(new OperationsReportMail(
                 $path,
                 $dispatch->report_date->toDateString(),

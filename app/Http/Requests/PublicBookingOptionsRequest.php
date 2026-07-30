@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Setting;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -30,7 +31,9 @@ class PublicBookingOptionsRequest extends FormRequest
             function (Validator $validator): void {
                 $timezone = (string) config('app.business_timezone');
                 $earliest = CarbonImmutable::now($timezone)->startOfDay()->addDay();
-                $latest = $earliest->addDays(99);
+                $windowDays = Setting::query()
+                    ->find(1)->booking_window_days ?? 100;
+                $latest = $earliest->addDays($windowDays - 1);
                 $start = $this->validatedDate('start_date', $validator);
                 $end = $this->validatedDate('end_date', $validator);
 

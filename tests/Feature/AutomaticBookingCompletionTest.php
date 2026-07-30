@@ -3,6 +3,7 @@
 use App\Enums\BookingStatus;
 use App\Models\Booking;
 use App\Models\BookingManagementToken;
+use App\Models\Setting;
 use App\Models\TimeSlot;
 use App\Models\Zone;
 use App\Services\BookingService;
@@ -22,6 +23,12 @@ beforeEach(function () {
 
     Zone::query()->create(['name' => 'Mawar', 'is_active' => true]);
     TimeSlot::query()->create(['start_time' => '12:00:00', 'is_active' => true]);
+    Setting::query()->create([
+        'id' => 1,
+        'daily_booking_limit' => 20,
+        'operations_email' => 'ops@example.com',
+        'embed_allowed_origins' => [],
+    ]);
 });
 
 afterEach(function () {
@@ -89,7 +96,7 @@ test('completed bookings cannot be modified cancelled or rescheduled', function 
                 'chair_count' => 2,
                 'additional_notes' => null,
             ],
-            20,
+            Setting::query()->findOrFail(1),
             CarbonImmutable::now(),
         ))->toThrow(DomainException::class);
 });

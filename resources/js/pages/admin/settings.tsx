@@ -4,7 +4,10 @@ import type { FormEvent, ReactNode } from 'react';
 import AdminLayout from '@/layouts/admin-layout';
 
 type SettingsData = {
+    booking_window_days: number;
+    booking_limit_mode: 'daily' | 'hourly';
     daily_booking_limit: number | null;
+    hourly_booking_limit: number | null;
     operations_email: string;
     discord_webhook_configured: boolean;
     discord_webhook_masked: string | null;
@@ -13,9 +16,15 @@ type SettingsData = {
 
 export default function Settings({ settings }: { settings: SettingsData }) {
     const form = useForm({
+        booking_window_days: String(settings.booking_window_days),
+        booking_limit_mode: settings.booking_limit_mode,
         daily_booking_limit:
             settings.daily_booking_limit && settings.daily_booking_limit > 0
                 ? String(settings.daily_booking_limit)
+                : '',
+        hourly_booking_limit:
+            settings.hourly_booking_limit && settings.hourly_booking_limit > 0
+                ? String(settings.hourly_booking_limit)
                 : '',
         operations_email: settings.operations_email,
         discord_webhook: '',
@@ -27,7 +36,12 @@ export default function Settings({ settings }: { settings: SettingsData }) {
         event.preventDefault();
         form.transform((data) => ({
             ...data,
+            booking_window_days: Number(data.booking_window_days),
             daily_booking_limit: Number(data.daily_booking_limit),
+            hourly_booking_limit:
+                data.hourly_booking_limit === ''
+                    ? null
+                    : Number(data.hourly_booking_limit),
             embed_allowed_origins: data.embed_allowed_origins
                 .split('\n')
                 .map((origin) => origin.trim())
@@ -63,36 +77,156 @@ export default function Settings({ settings }: { settings: SettingsData }) {
                         className="mt-8 space-y-6 rounded-xl border border-slate-200 bg-white p-5 sm:p-6"
                     >
                         <Field
-                            label="Batas booking harian"
-                            id="daily-booking-limit"
-                            error={form.errors.daily_booking_limit}
+                            label="Maksimal hari booking"
+                            id="booking-window-days"
+                            error={form.errors.booking_window_days}
+                            hint="Pilih antara 1 sampai 100 hari dari hari ini."
                         >
                             <input
-                                id="daily-booking-limit"
+                                id="booking-window-days"
                                 type="number"
                                 min="1"
+                                max="100"
                                 required
-                                value={form.data.daily_booking_limit}
+                                value={form.data.booking_window_days}
                                 onChange={(event) =>
                                     form.setData(
-                                        'daily_booking_limit',
-                                        event.target.value.replace(
-                                            /^0+(?=\d)/,
-                                            '',
-                                        ),
+                                        'booking_window_days',
+                                        integerInput(event.target.value),
                                     )
                                 }
                                 aria-invalid={Boolean(
-                                    form.errors.daily_booking_limit,
+                                    form.errors.booking_window_days,
                                 )}
                                 aria-describedby={
-                                    form.errors.daily_booking_limit
-                                        ? 'daily-booking-limit-error'
-                                        : undefined
+                                    form.errors.booking_window_days
+                                        ? 'booking-window-days-error'
+                                        : 'booking-window-days-hint'
                                 }
                                 className="min-h-11 w-full rounded-lg border border-slate-300 px-3 outline-none focus:border-brand-primary focus:ring-3 focus:ring-sky-100"
                             />
                         </Field>
+
+                        <fieldset>
+                            <legend className="mb-2 text-sm font-semibold">
+                                Perhitungan batas booking
+                            </legend>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                {[
+                                    {
+                                        value: 'daily' as const,
+                                        label: 'Per hari',
+                                        description:
+                                            'Satu batas untuk seluruh booking pada tanggal tersebut.',
+                                    },
+                                    {
+                                        value: 'hourly' as const,
+                                        label: 'Per jam',
+                                        description:
+                                            'Batas terpisah untuk setiap slot jam.',
+                                    },
+                                ].map((option) => (
+                                    <label
+                                        key={option.value}
+                                        className="flex min-h-16 cursor-pointer gap-3 rounded-lg border border-slate-300 p-3 has-checked:border-brand-primary has-checked:bg-sky-50"
+                                    >
+                                        <input
+                                            type="radio"
+                                            name="booking-limit-mode"
+                                            value={option.value}
+                                            checked={
+                                                form.data.booking_limit_mode ===
+                                                option.value
+                                            }
+                                            onChange={() =>
+                                                form.setData(
+                                                    'booking_limit_mode',
+                                                    option.value,
+                                                )
+                                            }
+                                            className="mt-1 size-4 accent-brand-primary"
+                                        />
+                                        <span>
+                                            <span className="block text-sm font-semibold">
+                                                {option.label}
+                                            </span>
+                                            <span className="mt-1 block text-xs text-slate-600">
+                                                {option.description}
+                                            </span>
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                            {form.errors.booking_limit_mode && (
+                                <p
+                                    role="alert"
+                                    className="mt-2 text-sm text-red-700"
+                                >
+                                    {form.errors.booking_limit_mode}
+                                </p>
+                            )}
+                        </fieldset>
+
+                        {form.data.booking_limit_mode === 'daily' ? (
+                            <Field
+                                label="Batas booking per hari"
+                                id="daily-booking-limit"
+                                error={form.errors.daily_booking_limit}
+                            >
+                                <input
+                                    id="daily-booking-limit"
+                                    type="number"
+                                    min="1"
+                                    required
+                                    value={form.data.daily_booking_limit}
+                                    onChange={(event) =>
+                                        form.setData(
+                                            'daily_booking_limit',
+                                            integerInput(event.target.value),
+                                        )
+                                    }
+                                    aria-invalid={Boolean(
+                                        form.errors.daily_booking_limit,
+                                    )}
+                                    aria-describedby={
+                                        form.errors.daily_booking_limit
+                                            ? 'daily-booking-limit-error'
+                                            : undefined
+                                    }
+                                    className="min-h-11 w-full rounded-lg border border-slate-300 px-3 outline-none focus:border-brand-primary focus:ring-3 focus:ring-sky-100"
+                                />
+                            </Field>
+                        ) : (
+                            <Field
+                                label="Batas booking per jam"
+                                id="hourly-booking-limit"
+                                error={form.errors.hourly_booking_limit}
+                                hint="Berlaku sama untuk setiap slot jam yang aktif."
+                            >
+                                <input
+                                    id="hourly-booking-limit"
+                                    type="number"
+                                    min="1"
+                                    required
+                                    value={form.data.hourly_booking_limit}
+                                    onChange={(event) =>
+                                        form.setData(
+                                            'hourly_booking_limit',
+                                            integerInput(event.target.value),
+                                        )
+                                    }
+                                    aria-invalid={Boolean(
+                                        form.errors.hourly_booking_limit,
+                                    )}
+                                    aria-describedby={
+                                        form.errors.hourly_booking_limit
+                                            ? 'hourly-booking-limit-error'
+                                            : 'hourly-booking-limit-hint'
+                                    }
+                                    className="min-h-11 w-full rounded-lg border border-slate-300 px-3 outline-none focus:border-brand-primary focus:ring-3 focus:ring-sky-100"
+                                />
+                            </Field>
+                        )}
 
                         <Field
                             label="Email laporan operasional"
@@ -212,6 +346,10 @@ export default function Settings({ settings }: { settings: SettingsData }) {
             </div>
         </AdminLayout>
     );
+}
+
+function integerInput(value: string) {
+    return value.replace(/^0+(?=\d)/, '');
 }
 
 function Field({

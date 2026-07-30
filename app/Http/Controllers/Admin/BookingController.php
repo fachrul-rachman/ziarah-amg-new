@@ -81,7 +81,7 @@ class BookingController extends Controller
             $this->bookingService->updateByAdmin(
                 $booking,
                 $request->validated(),
-                $this->dailyLimit(),
+                $this->setting(),
                 CarbonImmutable::now(),
             );
         } catch (DomainException $exception) {
@@ -111,6 +111,7 @@ class BookingController extends Controller
 
     public function export(AdminBookingIndexRequest $request): BinaryFileResponse
     {
+        $filters = $request->safe()->except('page');
         $path = tempnam(sys_get_temp_dir(), 'booking-export-');
 
         if ($path === false) {
@@ -119,12 +120,14 @@ class BookingController extends Controller
 
         $this->excelExport->write(
             Booking::query()
-                ->adminFiltered($request->safe()->except('page'))
+                ->adminFiltered($filters)
                 ->orderBy('visit_date')
                 ->orderBy('visit_time')
                 ->orderBy('id')
                 ->cursor(),
             $path,
+            isset($filters['date_from']) ? (string) $filters['date_from'] : null,
+            isset($filters['date_to']) ? (string) $filters['date_to'] : null,
         );
 
         return response()
@@ -176,8 +179,8 @@ class BookingController extends Controller
         ];
     }
 
-    private function dailyLimit(): int
+    private function setting(): Setting
     {
-        return (int) Setting::query()->findOrFail(1)->daily_booking_limit;
+        return Setting::query()->findOrFail(1);
     }
 }

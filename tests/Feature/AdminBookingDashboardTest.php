@@ -242,7 +242,7 @@ test('admin cancellation preserves the booking revokes tokens and sends no email
 });
 
 test('excel export follows filters and neutralises spreadsheet formulas', function () {
-    $matching = phaseEightBooking([
+    phaseEightBooking([
         'customer_name' => '=HYPERLINK("https://example.com")',
         'deceased_name' => '+SUM(1,1)',
         'additional_notes' => '@danger',
@@ -254,7 +254,11 @@ test('excel export follows filters and neutralises spreadsheet formulas', functi
     ]);
 
     $response = $this->actingAs(User::factory()->create())
-        ->get('/admin/bookings/export?status=confirmed');
+        ->get('/admin/bookings/export?'.http_build_query([
+            'status' => 'confirmed',
+            'date_from' => '2026-08-01',
+            'date_to' => '2026-08-01',
+        ]));
 
     $response->assertOk()
         ->assertHeader(
@@ -281,11 +285,25 @@ test('excel export follows filters and neutralises spreadsheet formulas', functi
     $reader->close();
     unlink($path);
 
-    expect($rows)->toHaveCount(2)
-        ->and($rows[1])->toContain($matching->public_reference)
+    expect($rows)->toHaveCount(3)
+        ->and($rows[0][0])->toBe('INFO ZIARAH Tanggal 1 Agustus 2026')
+        ->and($rows[1])->toBe([
+            'Tanggal Ziarah',
+            'Jam',
+            'Zona',
+            'Nomor lot',
+            'Nama Pemesan',
+            'Email',
+            'Nomor Telfon',
+            'Nama Alm/Ah',
+            'Catatan',
+            'Fasilitas (Tenda, jumlah kursi)',
+        ])
+        ->and($rows[2])
         ->toContain('\'=HYPERLINK("https://example.com")')
         ->toContain('\'+SUM(1,1)')
         ->toContain('\'@danger')
+        ->toContain('Tenda: Tidak | Jumlah kursi: 2')
         ->not->toContain('Tidak Diekspor');
 });
 

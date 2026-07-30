@@ -63,6 +63,20 @@ test('booking options can limit the calendar range and search active zones', fun
         ->assertJsonPath('zones.0.name', 'Mawar');
 });
 
+test('booking options use the configured maximum booking window', function () {
+    Setting::query()->whereKey(1)->update(['booking_window_days' => 7]);
+
+    $this->getJson('/api/public/booking-options')
+        ->assertOk()
+        ->assertJsonPath('latest_date', '2026-08-05')
+        ->assertJsonPath('booking_window_days', 7)
+        ->assertJsonCount(7, 'dates');
+
+    $this->getJson('/api/public/booking-options?end_date=2026-08-06')
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('end_date');
+});
+
 test('booking options mark a date full from confirmed bookings only', function () {
     $zone = Zone::query()->where('name', 'Mawar')->firstOrFail();
     createAvailabilityBooking($zone, '2026-08-01', BookingStatus::Confirmed);
@@ -125,6 +139,44 @@ test('available slots are disabled when the selected date is full', function () 
         ->assertJsonPath('slots.1.disabled_reason', 'date_full');
 });
 
+test('hourly quota disables only full slots until every slot is full', function () {
+    Setting::query()->whereKey(1)->update([
+        'booking_limit_mode' => 'hourly',
+        'daily_booking_limit' => 1,
+        'hourly_booking_limit' => 1,
+    ]);
+    $zone = Zone::query()->where('name', 'Mawar')->firstOrFail();
+    createAvailabilityBooking($zone, '2026-08-01', BookingStatus::Confirmed);
+
+    $this->getJson(
+        '/api/public/booking-options?start_date=2026-08-01&end_date=2026-08-01',
+    )
+        ->assertOk()
+        ->assertJsonPath('dates.0.is_full', false);
+
+    $this->getJson('/api/public/available-slots?date=2026-08-01')
+        ->assertOk()
+        ->assertJsonPath('is_full', false)
+        ->assertJsonPath('slots.0.start_time', '09:00')
+        ->assertJsonPath('slots.0.is_available', true)
+        ->assertJsonPath('slots.1.start_time', '10:00')
+        ->assertJsonPath('slots.1.is_available', false)
+        ->assertJsonPath('slots.1.disabled_reason', 'slot_full');
+
+    createAvailabilityBooking(
+        $zone,
+        '2026-08-01',
+        BookingStatus::Confirmed,
+        '09:00:00',
+    );
+
+    $this->getJson(
+        '/api/public/booking-options?start_date=2026-08-01&end_date=2026-08-01',
+    )
+        ->assertOk()
+        ->assertJsonPath('dates.0.is_full', true);
+});
+
 test('available slots reject missing malformed and out of range dates', function (?string $date) {
     $query = $date === null ? '' : '?date='.urlencode($date);
 
@@ -162,12 +214,13 @@ function createAvailabilityBooking(
     Zone $zone,
     string $date,
     BookingStatus $status,
+    string $time = '10:00:00',
 ): Booking {
     return Booking::query()->create([
         'public_reference' => Str::uuid()->toString(),
         'status' => $status,
         'visit_date' => $date,
-        'visit_time' => '10:00:00',
+        'visit_time' => $time,
         'zone_id' => $zone->id,
         'zone_name_snapshot' => $zone->name,
         'lot_number' => 'A1',

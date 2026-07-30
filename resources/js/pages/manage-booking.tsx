@@ -46,7 +46,7 @@ type Slot = {
     id: number;
     start_time: string;
     is_available: boolean;
-    disabled_reason: 'date_full' | 'minimum_lead_time' | null;
+    disabled_reason: 'date_full' | 'slot_full' | 'minimum_lead_time' | null;
 };
 
 type RescheduleData = {
@@ -542,6 +542,10 @@ function RescheduleForm({
 }) {
     const currentZoneIsActive =
         options?.zones.some((zone) => zone.id === form.zone_id) ?? false;
+    const chairError =
+        form.chair_count > 500
+            ? 'Jumlah kursi maksimal 500.'
+            : errors.chair_count;
 
     return (
         <>
@@ -702,10 +706,15 @@ function RescheduleForm({
                 <Field
                     id="reschedule-chairs"
                     label="Jumlah kursi"
-                    error={errors.chair_count}
+                    error={chairError}
                 >
-                    <select
+                    <input
                         id="reschedule-chairs"
+                        type="number"
+                        min="0"
+                        max="500"
+                        step="1"
+                        inputMode="numeric"
                         value={form.chair_count}
                         onChange={(event) =>
                             onChange((current) =>
@@ -715,36 +724,6 @@ function RescheduleForm({
                                           chair_count: Number(
                                               event.target.value,
                                           ),
-                                      }
-                                    : current,
-                            )
-                        }
-                        className={inputClass}
-                    >
-                        {[2, 3, 4, 5, 6].map((count) => (
-                            <option key={count} value={count}>
-                                {count} kursi
-                            </option>
-                        ))}
-                    </select>
-                </Field>
-
-                <Field
-                    id="reschedule-notes"
-                    label="Catatan tambahan (opsional)"
-                    error={errors.additional_notes}
-                >
-                    <textarea
-                        id="reschedule-notes"
-                        rows={4}
-                        maxLength={2000}
-                        value={form.additional_notes}
-                        onChange={(event) =>
-                            onChange((current) =>
-                                current
-                                    ? {
-                                          ...current,
-                                          additional_notes: event.target.value,
                                       }
                                     : current,
                             )

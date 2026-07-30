@@ -263,7 +263,7 @@ test('failed reschedule keeps original booking and token active', function () {
         phaseSevenBookingAttributes($zone, '2026-08-02', [
             'customer_email' => 'other@example.com',
         ]),
-        dailyLimit: 1,
+        setting: Setting::query()->findOrFail(1),
         now: now(),
     );
 
@@ -297,6 +297,30 @@ test('same date reschedule does not require another quota unit', function () {
         ->assertJsonPath('visit.time', '11:00');
 });
 
+test('hourly quota rejects reschedule into a full slot on the same date', function () {
+    Setting::query()->whereKey(1)->update([
+        'booking_limit_mode' => 'hourly',
+        'daily_booking_limit' => 1,
+        'hourly_booking_limit' => 1,
+    ]);
+    ['token' => $token] = phaseSevenManagedBooking();
+    phaseSevenManagedBooking([
+        'visit_time' => '11:00:00',
+        'customer_email' => 'other@example.com',
+    ]);
+    $zone = Zone::query()->where('name', 'Mawar')->firstOrFail();
+
+    $this->putJson(
+        "/api/manage/bookings/{$token}/reschedule",
+        phaseSevenReschedulePayload($zone, [
+            'visit_date' => '2026-08-01',
+            'visit_time' => '11:00',
+        ]),
+    )
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('visit_time');
+});
+
 test('management availability keeps active slots available on the current full date', function () {
     Setting::query()->whereKey(1)->update(['daily_booking_limit' => 1]);
     ['token' => $token] = phaseSevenManagedBooking();
@@ -328,7 +352,7 @@ test('reschedule deadline and target rules are enforced server side', function (
     'inactive zone' => [['zone_id' => 999999], 'zone_id'],
     'inactive slot' => [['visit_time' => '12:00'], 'visit_time'],
     'invalid lot' => [['lot_number' => 'A-1'], 'lot_number'],
-    'chair range' => [['chair_count' => 7], 'chair_count'],
+    'chair range' => [['chair_count' => 501], 'chair_count'],
 ]);
 
 test('morning reschedule is rejected at its exact deadline', function () {
@@ -434,7 +458,7 @@ function phaseSevenManagedBooking(array $overrides = []): array
     $zone = Zone::query()->where('name', 'Mawar')->firstOrFail();
     $result = app(BookingService::class)->createConfirmed(
         phaseSevenBookingAttributes($zone, '2026-08-01', $overrides),
-        dailyLimit: (int) Setting::query()->findOrFail(1)->daily_booking_limit,
+        setting: Setting::query()->findOrFail(1),
         now: now(),
     );
 

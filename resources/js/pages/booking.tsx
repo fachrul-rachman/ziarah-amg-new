@@ -5,8 +5,6 @@ import {
     Check,
     ChevronLeft,
     ChevronRight,
-    Minus,
-    Plus,
     Search,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -26,12 +24,13 @@ type TimeSlot = {
     id: number;
     start_time: string;
     is_available?: boolean;
-    disabled_reason?: 'date_full' | 'minimum_lead_time' | null;
+    disabled_reason?: 'date_full' | 'slot_full' | 'minimum_lead_time' | null;
 };
 
 type BookingOptions = {
     earliest_date: string;
     latest_date: string;
+    booking_window_days: number;
     dates: DateAvailability[];
     zones: Zone[];
     time_slots: TimeSlot[];
@@ -89,7 +88,7 @@ const initialData: BookingData = {
     zone_id: null,
     lot_number: '',
     tent_required: null,
-    chair_count: 2,
+    chair_count: 0,
     customer_name: '',
     customer_email: '',
     customer_phone: '',
@@ -251,8 +250,17 @@ export default function Booking({
             }
         }
 
-        if (currentStep === 1 && data.tent_required === null) {
-            nextErrors.tent_required = 'Pilih kebutuhan tenda.';
+        if (currentStep === 1) {
+            if (data.chair_count < 0) {
+                nextErrors.chair_count =
+                    'Jumlah kursi tidak boleh kurang dari 0.';
+            } else if (data.chair_count > 500) {
+                nextErrors.chair_count = 'Jumlah kursi maksimal 500.';
+            }
+
+            if (data.tent_required === null) {
+                nextErrors.tent_required = 'Pilih kebutuhan tenda.';
+            }
         }
 
         if (currentStep === 2) {
@@ -608,7 +616,8 @@ function VisitStep({
                     onChange={onDate}
                 />
                 <p className="mt-2 text-xs text-slate-600">
-                    Minimal pemesanan H+1 dan maksimal H+100 dari hari ini.
+                    Minimal pemesanan H+1 dan maksimal H+
+                    {options.booking_window_days} dari hari ini.
                 </p>
                 {chosenDate?.is_full && (
                     <p className="mt-2 text-sm font-medium text-red-700">
@@ -639,7 +648,9 @@ function VisitStep({
                                         ? 'Kurang dari 18 jam'
                                         : slot.disabled_reason === 'date_full'
                                           ? 'Tanggal penuh'
-                                          : undefined
+                                          : slot.disabled_reason === 'slot_full'
+                                            ? 'Jam penuh'
+                                            : undefined
                                 }
                                 onClick={() =>
                                     onChange((current) => ({
@@ -902,6 +913,11 @@ function FacilitiesStep({
     errors: Record<string, string>;
     onChange: React.Dispatch<React.SetStateAction<BookingData>>;
 }) {
+    const chairError =
+        data.chair_count > 500
+            ? 'Jumlah kursi maksimal 500.'
+            : errors.chair_count;
+
     return (
         <div className="px-4 py-5">
             <StepHeader
@@ -910,58 +926,28 @@ function FacilitiesStep({
             />
             <fieldset>
                 <legend className={fieldLabelClass}>Jumlah item</legend>
-                <div className="mt-2 rounded-lg border border-slate-300">
-                    <div className="flex min-h-16 items-center justify-between gap-4 px-3 py-2">
-                        <div>
-                            <p className="text-sm font-medium">Kursi</p>
-                            <p className="mt-0.5 text-xs text-slate-500">
-                                Minimal 2, maksimal 6
-                            </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                type="button"
-                                aria-label="Kurangi jumlah kursi"
-                                disabled={data.chair_count <= 2}
-                                onClick={() =>
-                                    onChange((current) => ({
-                                        ...current,
-                                        chair_count: Math.max(
-                                            2,
-                                            current.chair_count - 1,
-                                        ),
-                                    }))
-                                }
-                                className={counterButton}
-                            >
-                                <Minus aria-hidden="true" className="size-4" />
-                            </button>
-                            <output
-                                aria-live="polite"
-                                className="w-7 text-center text-sm font-semibold"
-                            >
-                                {data.chair_count}
-                            </output>
-                            <button
-                                type="button"
-                                aria-label="Tambah jumlah kursi"
-                                disabled={data.chair_count >= 6}
-                                onClick={() =>
-                                    onChange((current) => ({
-                                        ...current,
-                                        chair_count: Math.min(
-                                            6,
-                                            current.chair_count + 1,
-                                        ),
-                                    }))
-                                }
-                                className={counterButton}
-                            >
-                                <Plus aria-hidden="true" className="size-4" />
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <input
+                    id="chair-count"
+                    type="number"
+                    min="0"
+                    max="500"
+                    step="1"
+                    inputMode="numeric"
+                    value={data.chair_count}
+                    aria-label="Jumlah kursi"
+                    aria-invalid={Boolean(chairError)}
+                    aria-describedby={
+                        chairError ? 'chair-count-error' : undefined
+                    }
+                    onChange={(event) =>
+                        onChange((current) => ({
+                            ...current,
+                            chair_count: Number(event.target.value),
+                        }))
+                    }
+                    className={`${inputClass} mt-2`}
+                />
+                <ErrorText id="chair-count-error" error={chairError} />
             </fieldset>
 
             <fieldset className="mt-5">
@@ -1142,26 +1128,6 @@ function PersonalStep({
                     ))}
                 </dl>
             </section>
-            <Field
-                id="additional-notes"
-                label="Catatan tambahan (opsional)"
-                error={errors.additional_notes}
-            >
-                <textarea
-                    id="additional-notes"
-                    rows={4}
-                    maxLength={2000}
-                    value={data.additional_notes}
-                    onChange={(event) =>
-                        onChange((current) => ({
-                            ...current,
-                            additional_notes: event.target.value,
-                        }))
-                    }
-                    className={inputClass}
-                    placeholder="Tulis catatan tambahan bila perlu"
-                />
-            </Field>
         </div>
     );
 }
@@ -1246,7 +1212,6 @@ function ReviewStep({
                     ['Email', data.customer_email],
                     ['Telepon', data.customer_phone],
                     ['Almarhum/ah', data.deceased_name],
-                    ['Catatan', data.additional_notes || 'Tidak ada'],
                 ]}
             />
 
@@ -1478,8 +1443,6 @@ const inputClass =
     'min-h-11 w-full rounded-lg border border-slate-300 bg-[#fafbfc] px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-brand-primary focus:bg-white focus:ring-3 focus:ring-sky-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400';
 const fieldLabelClass =
     'text-[10px] font-semibold tracking-[0.12em] text-slate-500 uppercase';
-const counterButton =
-    'flex size-9 items-center justify-center rounded-md border border-slate-300 bg-white text-[#172746] hover:border-brand-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:cursor-not-allowed disabled:text-slate-300';
 const primaryButton =
     'inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-brand-primary px-5 py-2 text-sm font-semibold text-white hover:bg-brand-primary-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-primary disabled:cursor-not-allowed disabled:opacity-60';
 const secondaryButton =

@@ -41,13 +41,22 @@ function configuredBookingTarget(CarbonImmutable $now): array
     return [$zone, $now->addDays(2)->toDateString()];
 }
 
+function dailyCapacitySetting(int $limit): Setting
+{
+    return Setting::query()->updateOrCreate(['id' => 1], [
+        'daily_booking_limit' => $limit,
+        'operations_email' => 'ops@example.com',
+        'embed_allowed_origins' => [],
+    ]);
+}
+
 test('confirmed booking stores only the management token hash', function () {
     $now = CarbonImmutable::parse('2026-07-29 10:00:00', 'Asia/Jakarta');
     [$zone, $date] = configuredBookingTarget($now);
 
     $result = app(BookingService::class)->createConfirmed(
         validBookingAttributes($zone, $date),
-        dailyLimit: 10,
+        setting: dailyCapacitySetting(10),
         now: $now,
     );
 
@@ -66,13 +75,13 @@ test('one confirmed booking consumes one quota unit regardless of facilities', f
 
     $service->createConfirmed(
         validBookingAttributes($zone, $date, ['tent_required' => true, 'chair_count' => 6]),
-        dailyLimit: 1,
+        setting: dailyCapacitySetting(1),
         now: $now,
     );
 
     expect(fn () => $service->createConfirmed(
         validBookingAttributes($zone, $date, ['customer_email' => 'second@example.com']),
-        dailyLimit: 1,
+        setting: dailyCapacitySetting(1),
         now: $now,
     ))->toThrow(DomainException::class)
         ->and(Booking::query()->confirmed()->whereDate('visit_date', $date)->count())->toBe(1);
@@ -85,7 +94,7 @@ test('cancelled bookings release their quota unit', function () {
 
     $first = $service->createConfirmed(
         validBookingAttributes($zone, $date),
-        dailyLimit: 1,
+        setting: dailyCapacitySetting(1),
         now: $now,
     )['booking'];
 
@@ -96,7 +105,7 @@ test('cancelled bookings release their quota unit', function () {
 
     $service->createConfirmed(
         validBookingAttributes($zone, $date, ['customer_email' => 'second@example.com']),
-        dailyLimit: 1,
+        setting: dailyCapacitySetting(1),
         now: $now,
     );
 
@@ -114,7 +123,7 @@ test('client supplied status fields cannot change confirmed booking state', func
             'cancelled_at' => $now,
             'completed_at' => $now,
         ]),
-        dailyLimit: 10,
+        setting: dailyCapacitySetting(10),
         now: $now,
     )['booking'];
 
@@ -138,16 +147,23 @@ test('sensitive webhook settings are encrypted at rest', function () {
         ->and(DB::table('settings')->value('discord_webhook'))->not->toBe($webhook);
 });
 
-test('database rejects invalid chair counts', function () {
+test('database accepts chair boundaries and rejects counts above five hundred', function () {
     $now = CarbonImmutable::parse('2026-07-29 10:00:00', 'Asia/Jakarta');
     [$zone, $date] = configuredBookingTarget($now);
     $booking = app(BookingService::class)->createConfirmed(
         validBookingAttributes($zone, $date),
-        dailyLimit: 10,
+        setting: dailyCapacitySetting(10),
         now: $now,
     )['booking'];
 
-    expect(fn () => DB::table('bookings')->where('id', $booking->id)->update(['chair_count' => 1]))
+    DB::table('bookings')->where('id', $booking->id)->update(['chair_count' => 0]);
+    expect((int) DB::table('bookings')->where('id', $booking->id)->value('chair_count'))
+        ->toBe(0);
+
+    DB::table('bookings')->where('id', $booking->id)->update(['chair_count' => 500]);
+    expect((int) DB::table('bookings')->where('id', $booking->id)->value('chair_count'))
+        ->toBe(500)
+        ->and(fn () => DB::table('bookings')->where('id', $booking->id)->update(['chair_count' => 501]))
         ->toThrow(QueryException::class);
 });
 
@@ -156,7 +172,7 @@ test('database rejects lot numbers outside uppercase alphanumeric format', funct
     [$zone, $date] = configuredBookingTarget($now);
     $booking = app(BookingService::class)->createConfirmed(
         validBookingAttributes($zone, $date),
-        dailyLimit: 10,
+        setting: dailyCapacitySetting(10),
         now: $now,
     )['booking'];
 

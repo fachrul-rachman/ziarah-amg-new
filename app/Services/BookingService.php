@@ -6,6 +6,7 @@ use App\Enums\BookingStatus;
 use App\Models\Booking;
 use App\Models\BookingDateLock;
 use App\Models\BookingManagementToken;
+use App\Models\Setting;
 use App\Models\TimeSlot;
 use App\Models\Zone;
 use Carbon\CarbonImmutable;
@@ -19,12 +20,22 @@ use InvalidArgumentException;
 
 class BookingService
 {
-    public function isWithinDateWindow(string $visitDate, CarbonInterface $now): bool
-    {
+    public function isWithinDateWindow(
+        string $visitDate,
+        CarbonInterface $now,
+        int $bookingWindowDays = 100,
+    ): bool {
+        if ($bookingWindowDays < 1 || $bookingWindowDays > 100) {
+            throw new InvalidArgumentException('Booking window must be between 1 and 100 days.');
+        }
+
         $today = $this->businessNow($now)->startOfDay();
         $date = CarbonImmutable::parse($visitDate, $this->timezone())->startOfDay();
 
-        return $date->betweenIncluded($today->addDay(), $today->addDays(100));
+        return $date->betweenIncluded(
+            $today->addDay(),
+            $today->addDays($bookingWindowDays),
+        );
     }
 
     public function meetsLeadTime(
@@ -127,27 +138,25 @@ class BookingService
             );
     }
 
-    public function remainingCapacity(string $visitDate, int $dailyLimit): int
-    {
-        if ($dailyLimit < 1) {
-            throw new InvalidArgumentException('Daily booking limit must be positive.');
+    public function remainingCapacity(
+        string $visitDate,
+        string $visitTime,
+        Setting $setting,
+        ?Booking $currentBooking = null,
+    ): int {
+        $query = Booking::query()
+            ->confirmed()
+            ->where('visit_date', $visitDate);
+
+        if ($setting->booking_limit_mode === Setting::LIMIT_HOURLY) {
+            $query->where('visit_time', $this->normaliseTime($visitTime));
         }
 
-        $used = Booking::query()
-            ->confirmed()
-            ->where('visit_date', $visitDate)
-            ->count();
+        if ($currentBooking !== null) {
+            $query->where('id', '<>', $currentBooking->id);
+        }
 
-        return max(0, $dailyLimit - $used);
-    }
-
-    public function isDateAvailable(
-        string $visitDate,
-        int $dailyLimit,
-        CarbonInterface $now,
-    ): bool {
-        return $this->isWithinDateWindow($visitDate, $now)
-            && $this->remainingCapacity($visitDate, $dailyLimit) > 0;
+        return max(0, $this->capacityLimit($setting) - $query->count());
     }
 
     /**
@@ -156,18 +165,36 @@ class BookingService
     public function dateAvailability(
         string $startDate,
         string $endDate,
-        int $dailyLimit,
+        Setting $setting,
     ): array {
-        if ($dailyLimit < 1) {
-            throw new InvalidArgumentException('Daily booking limit must be positive.');
-        }
-
-        $counts = Booking::query()
+        $limit = $this->capacityLimit($setting);
+        $hourly = $setting->booking_limit_mode === Setting::LIMIT_HOURLY;
+        $countQuery = Booking::query()
             ->confirmed()
             ->whereBetween('visit_date', [$startDate, $endDate])
-            ->selectRaw('visit_date, COUNT(*) AS aggregate')
-            ->groupBy('visit_date')
-            ->pluck('aggregate', 'visit_date');
+            ->selectRaw(
+                $hourly
+                    ? 'visit_date, visit_time, COUNT(*) AS aggregate'
+                    : 'visit_date, COUNT(*) AS aggregate',
+            )
+            ->groupBy('visit_date');
+        $activeTimes = collect();
+
+        if ($hourly) {
+            $countQuery->groupBy('visit_time');
+            $activeTimes = TimeSlot::query()
+                ->where('is_active', true)
+                ->orderBy('start_time')
+                ->pluck('start_time');
+        }
+
+        $counts = $countQuery->get()->mapWithKeys(
+            fn (Booking $row): array => [
+                $hourly
+                    ? $row->visit_date->toDateString().'|'.$row->visit_time
+                    : $row->visit_date->toDateString() => (int) $row->getAttribute('aggregate'),
+            ],
+        );
 
         $dates = [];
         $date = CarbonImmutable::parse($startDate, $this->timezone())->startOfDay();
@@ -175,7 +202,11 @@ class BookingService
 
         while ($date->lessThanOrEqualTo($end)) {
             $dateString = $date->toDateString();
-            $isFull = (int) ($counts[$dateString] ?? 0) >= $dailyLimit;
+            $isFull = $hourly
+                ? $activeTimes->isEmpty() || $activeTimes->every(
+                    fn (string $time): bool => (int) ($counts[$dateString.'|'.$time] ?? 0) >= $limit,
+                )
+                : (int) ($counts[$dateString] ?? 0) >= $limit;
             $dates[] = [
                 'date' => $dateString,
                 'is_full' => $isFull,
@@ -192,38 +223,66 @@ class BookingService
      */
     public function slotAvailability(
         string $visitDate,
-        int $dailyLimit,
+        Setting $setting,
         CarbonInterface $now,
         ?Booking $currentBooking = null,
     ): array {
-        $isCurrentDate = $currentBooking?->visit_date->toDateString() === $visitDate;
-        $isFull = ! $isCurrentDate
-            && $this->remainingCapacity($visitDate, $dailyLimit) === 0;
-
         $slots = TimeSlot::query()
             ->where('is_active', true)
             ->orderBy('start_time')
-            ->get()
-            ->map(function (TimeSlot $slot) use ($visitDate, $isFull, $now): array {
+            ->get();
+        $hourly = $setting->booking_limit_mode === Setting::LIMIT_HOURLY;
+        $limit = $this->capacityLimit($setting);
+        $usedQuery = Booking::query()
+            ->confirmed()
+            ->where('visit_date', $visitDate);
+
+        if ($currentBooking !== null) {
+            $usedQuery->where('id', '<>', $currentBooking->id);
+        }
+
+        $usedByTime = $hourly
+            ? $usedQuery
+                ->selectRaw('visit_time, COUNT(*) AS aggregate')
+                ->groupBy('visit_time')
+                ->pluck('aggregate', 'visit_time')
+            : collect();
+        $dateFull = ! $hourly && $usedQuery->count() >= $limit;
+        $isFull = $dateFull || ($hourly && $slots->isNotEmpty() && $slots->every(
+            fn (TimeSlot $slot): bool => (int) ($usedByTime[(string) $slot->start_time] ?? 0) >= $limit,
+        ));
+
+        $availability = $slots
+            ->map(function (TimeSlot $slot) use (
+                $visitDate,
+                $dateFull,
+                $hourly,
+                $limit,
+                $now,
+                $usedByTime,
+            ): array {
                 $meetsLeadTime = $this->meetsLeadTime(
                     $visitDate,
                     (string) $slot->start_time,
                     $now,
                 );
+                $slotFull = $hourly
+                    && (int) ($usedByTime[(string) $slot->start_time] ?? 0) >= $limit;
+                $capacityFull = $dateFull || $slotFull;
 
                 return [
                     'id' => $slot->id,
                     'start_time' => substr((string) $slot->start_time, 0, 5),
-                    'is_available' => ! $isFull && $meetsLeadTime,
-                    'disabled_reason' => $isFull
-                        ? 'date_full'
+                    'is_available' => ! $capacityFull && $meetsLeadTime,
+                    'disabled_reason' => $capacityFull
+                        ? ($slotFull ? 'slot_full' : 'date_full')
                         : ($meetsLeadTime ? null : 'minimum_lead_time'),
                 ];
             })
             ->values()
             ->all();
 
-        return ['is_full' => $isFull, 'slots' => $slots];
+        return ['is_full' => $isFull, 'slots' => $availability];
     }
 
     /**
@@ -232,13 +291,13 @@ class BookingService
      */
     public function createConfirmed(
         array $attributes,
-        int $dailyLimit,
+        Setting $setting,
         CarbonInterface $now,
     ): array {
         $visitDate = (string) $attributes['visit_date'];
         $visitTime = $this->normaliseTime((string) $attributes['visit_time']);
 
-        if (! $this->isWithinDateWindow($visitDate, $now)
+        if (! $this->isWithinDateWindow($visitDate, $now, $setting->booking_window_days)
             || ! $this->meetsLeadTime($visitDate, $visitTime, $now)) {
             throw new DomainException('The selected visit time is not available.');
         }
@@ -259,7 +318,7 @@ class BookingService
 
         return DB::transaction(function () use (
             $attributes,
-            $dailyLimit,
+            $setting,
             $now,
             $visitDate,
             $visitTime,
@@ -267,8 +326,8 @@ class BookingService
         ): array {
             $this->lockBookingDate($visitDate);
 
-            if ($this->remainingCapacity($visitDate, $dailyLimit) < 1) {
-                throw new DomainException('The selected visit date is full.');
+            if ($this->remainingCapacity($visitDate, $visitTime, $setting) < 1) {
+                throw $this->capacityException($setting);
             }
 
             $booking = Booking::query()->create([
@@ -340,13 +399,13 @@ class BookingService
     public function reschedule(
         string $rawToken,
         array $attributes,
-        int $dailyLimit,
+        Setting $setting,
         CarbonInterface $now,
     ): array {
         $visitDate = (string) $attributes['visit_date'];
         $visitTime = $this->normaliseTime((string) $attributes['visit_time']);
 
-        if (! $this->isWithinDateWindow($visitDate, $now)
+        if (! $this->isWithinDateWindow($visitDate, $now, $setting->booking_window_days)
             || ! $this->meetsLeadTime($visitDate, $visitTime, $now)) {
             throw new DomainException('The selected visit time is not available.');
         }
@@ -354,7 +413,7 @@ class BookingService
         return DB::transaction(function () use (
             $rawToken,
             $attributes,
-            $dailyLimit,
+            $setting,
             $now,
             $visitDate,
             $visitTime,
@@ -378,12 +437,15 @@ class BookingService
                 throw new DomainException('The selected visit option is not available.');
             }
 
-            if ($booking->visit_date->toDateString() !== $visitDate) {
-                $this->lockBookingDate($visitDate);
+            $this->lockBookingDate($visitDate);
 
-                if ($this->remainingCapacity($visitDate, $dailyLimit) < 1) {
-                    throw new DomainException('The selected visit date is full.');
-                }
+            if ($this->remainingCapacity(
+                $visitDate,
+                $visitTime,
+                $setting,
+                $booking,
+            ) < 1) {
+                throw $this->capacityException($setting);
             }
 
             $booking->update([
@@ -442,7 +504,7 @@ class BookingService
     public function updateByAdmin(
         Booking $booking,
         array $attributes,
-        int $dailyLimit,
+        Setting $setting,
         CarbonInterface $now,
     ): Booking {
         $visitDate = (string) $attributes['visit_date'];
@@ -451,7 +513,7 @@ class BookingService
         return DB::transaction(function () use (
             $booking,
             $attributes,
-            $dailyLimit,
+            $setting,
             $now,
             $visitDate,
             $visitTime,
@@ -483,12 +545,19 @@ class BookingService
                 throw new DomainException('Zona atau waktu kunjungan tidak tersedia.');
             }
 
-            if ($lockedBooking->visit_date->toDateString() !== $visitDate) {
-                $this->lockBookingDate($visitDate);
+            $this->lockBookingDate($visitDate);
 
-                if ($this->remainingCapacity($visitDate, $dailyLimit) < 1) {
-                    throw new DomainException('Tanggal kunjungan tujuan sudah penuh.');
-                }
+            if ($this->remainingCapacity(
+                $visitDate,
+                $visitTime,
+                $setting,
+                $lockedBooking,
+            ) < 1) {
+                throw new DomainException(
+                    $setting->booking_limit_mode === Setting::LIMIT_HOURLY
+                        ? 'Jam kunjungan tujuan sudah penuh.'
+                        : 'Tanggal kunjungan tujuan sudah penuh.',
+                );
             }
 
             $lockedBooking->update([
@@ -548,6 +617,28 @@ class BookingService
         ]);
 
         return $token;
+    }
+
+    private function capacityLimit(Setting $setting): int
+    {
+        $limit = $setting->booking_limit_mode === Setting::LIMIT_HOURLY
+            ? (int) $setting->hourly_booking_limit
+            : $setting->daily_booking_limit;
+
+        if ($limit < 1) {
+            throw new InvalidArgumentException('Booking limit must be positive.');
+        }
+
+        return $limit;
+    }
+
+    private function capacityException(Setting $setting): DomainException
+    {
+        return new DomainException(
+            $setting->booking_limit_mode === Setting::LIMIT_HOURLY
+                ? 'The selected visit time is full.'
+                : 'The selected visit date is full.',
+        );
     }
 
     /**

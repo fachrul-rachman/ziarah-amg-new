@@ -29,7 +29,7 @@ class UpdateAdminBookingRequest extends FormRequest
             ],
             'lot_number' => ['required', 'string', 'max:50', 'regex:/^[A-Z0-9]+$/'],
             'tent_required' => ['required', 'boolean'],
-            'chair_count' => ['required', 'integer', 'between:2,6'],
+            'chair_count' => ['required', 'integer', 'min:0', 'max:500'],
             'customer_name' => ['required', 'string', 'max:255'],
             'customer_email' => ['required', 'email:rfc', 'max:255'],
             'customer_phone' => [
@@ -49,6 +49,7 @@ class UpdateAdminBookingRequest extends FormRequest
             'customer_email.required' => 'Email wajib diisi.',
             'customer_email.email' => 'Format email tidak valid.',
             'customer_phone.required' => 'Nomor telepon wajib diisi.',
+            'chair_count.max' => 'Jumlah kursi maksimal 500.',
         ];
     }
 

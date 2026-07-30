@@ -100,8 +100,8 @@ test('required booking fields and business values are validated server side', fu
         'visit_time' => '09:00',
     ], 'visit_time'],
     'invalid lot' => [['lot_number' => 'A-1'], 'lot_number'],
-    'chair below minimum' => [['chair_count' => 1], 'chair_count'],
-    'chair above maximum' => [['chair_count' => 7], 'chair_count'],
+    'chair below minimum' => [['chair_count' => -1], 'chair_count'],
+    'chair above maximum' => [['chair_count' => 501], 'chair_count'],
     'tent missing' => [['tent_required' => null], 'tent_required'],
     'email missing' => [['customer_email' => ''], 'customer_email'],
     'invalid email' => [['customer_email' => 'invalid'], 'customer_email'],
@@ -112,6 +112,34 @@ test('required booking fields and business values are validated server side', fu
     'phone with non digit characters' => [['customer_phone' => '08123-456789'], 'customer_phone'],
     'ethics not accepted' => [['ethics_confirmed' => false], 'ethics_confirmed'],
 ]);
+
+test('chair count accepts zero and five hundred', function (int $chairCount) {
+    CarbonImmutable::setTestNow(now()->addSeconds(4));
+
+    $this->postJson('/api/public/bookings', array_replace(
+        validPublicBookingPayload(),
+        ['chair_count' => $chairCount],
+    ))->assertCreated();
+
+    expect(Booking::query()->sole()->chair_count)->toBe($chairCount);
+})->with([
+    'zero chairs' => 0,
+    'five hundred chairs' => 500,
+]);
+
+test('chair count above five hundred returns a clear message', function () {
+    CarbonImmutable::setTestNow(now()->addSeconds(4));
+
+    $this->postJson('/api/public/bookings', array_replace(
+        validPublicBookingPayload(),
+        ['chair_count' => 501],
+    ))
+        ->assertUnprocessable()
+        ->assertJsonPath(
+            'errors.chair_count.0',
+            'Jumlah kursi maksimal 500.',
+        );
+});
 
 test('phone accepts supported prefixes at the allowed length boundaries', function (
     string $phone,
@@ -157,6 +185,45 @@ test('a full date is rejected without creating another booking', function () {
         ->assertJsonValidationErrors('visit_date');
 
     expect(Booking::query()->count())->toBe(1);
+});
+
+test('hourly quota rejects only the full visit time', function () {
+    Setting::query()->whereKey(1)->update([
+        'booking_limit_mode' => 'hourly',
+        'daily_booking_limit' => 1,
+        'hourly_booking_limit' => 1,
+    ]);
+    CarbonImmutable::setTestNow(now()->addSeconds(4));
+
+    $this->postJson('/api/public/bookings', validPublicBookingPayload())
+        ->assertCreated();
+    $this->postJson('/api/public/bookings', array_replace(
+        validPublicBookingPayload(),
+        ['customer_email' => 'second@example.com'],
+    ))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('visit_time');
+    $this->postJson('/api/public/bookings', array_replace(
+        validPublicBookingPayload(),
+        [
+            'visit_time' => '09:00',
+            'customer_email' => 'third@example.com',
+        ],
+    ))->assertCreated();
+
+    expect(Booking::query()->count())->toBe(2);
+});
+
+test('submission respects the configured booking window', function () {
+    Setting::query()->whereKey(1)->update(['booking_window_days' => 7]);
+    CarbonImmutable::setTestNow(now()->addSeconds(4));
+
+    $this->postJson('/api/public/bookings', array_replace(
+        validPublicBookingPayload(),
+        ['visit_date' => '2026-08-06'],
+    ))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('visit_date');
 });
 
 test('the same email and phone may create multiple bookings', function () {

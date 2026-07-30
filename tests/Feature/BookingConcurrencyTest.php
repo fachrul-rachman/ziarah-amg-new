@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Booking;
+use App\Models\Setting;
 use App\Models\TimeSlot;
 use App\Models\Zone;
 use Carbon\CarbonImmutable;
@@ -10,11 +11,21 @@ use Symfony\Component\Process\Process;
 
 uses(DatabaseMigrations::class);
 
-test('concurrent bookings cannot exceed the final daily quota unit', function () {
+test('concurrent bookings cannot exceed the final configured quota unit', function (
+    string $mode,
+) {
     $now = CarbonImmutable::parse('2026-07-29 10:00:00', 'Asia/Jakarta');
     $date = $now->addDays(2)->toDateString();
     $zone = Zone::query()->create(['name' => 'Mawar', 'is_active' => true]);
     TimeSlot::query()->create(['start_time' => '10:00:00', 'is_active' => true]);
+    Setting::query()->create([
+        'id' => 1,
+        'booking_limit_mode' => $mode,
+        'daily_booking_limit' => $mode === Setting::LIMIT_DAILY ? 1 : 100,
+        'hourly_booking_limit' => $mode === Setting::LIMIT_HOURLY ? 1 : null,
+        'operations_email' => 'ops@example.com',
+        'embed_allowed_origins' => [],
+    ]);
 
     DB::unprepared(<<<'SQL'
         CREATE OR REPLACE FUNCTION delay_test_booking_insert()
@@ -52,7 +63,7 @@ test('concurrent bookings cannot exceed the final daily quota unit', function ()
                 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
                 app(App\Services\BookingService::class)->createConfirmed(
                     %s,
-                    1,
+                    App\Models\Setting::query()->findOrFail(1),
                     Carbon\CarbonImmutable::parse('%s', 'Asia/Jakarta'),
                 );
                 PHP,
@@ -94,4 +105,7 @@ test('concurrent bookings cannot exceed the final daily quota unit', function ()
 
     expect($successfulProcesses)->toBe(1)
         ->and(Booking::query()->confirmed()->where('visit_date', $date)->count())->toBe(1);
-});
+})->with([
+    'daily limit' => Setting::LIMIT_DAILY,
+    'hourly limit' => Setting::LIMIT_HOURLY,
+]);

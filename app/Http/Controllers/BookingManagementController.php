@@ -55,7 +55,7 @@ class BookingManagementController extends Controller
             'date' => $date,
             ...$this->bookings->slotAvailability(
                 $date,
-                $setting->daily_booking_limit,
+                $setting,
                 CarbonImmutable::now(),
                 $this->tokenRecord($request)->booking,
             ),
@@ -86,7 +86,7 @@ class BookingManagementController extends Controller
                     'chair_count',
                     'additional_notes',
                 ]),
-                $setting->daily_booking_limit,
+                $setting,
                 CarbonImmutable::now(),
             );
         } catch (DomainException $exception) {
@@ -174,7 +174,9 @@ class BookingManagementController extends Controller
 
         $field = str_contains($exception->getMessage(), 'date is full')
             ? 'visit_date'
-            : 'booking';
+            : (str_contains($exception->getMessage(), 'time is full')
+                ? 'visit_time'
+                : 'booking');
 
         throw ValidationException::withMessages([
             $field => $exception->getMessage(),

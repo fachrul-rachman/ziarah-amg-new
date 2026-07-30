@@ -57,11 +57,11 @@ class PublicBookingController extends Controller
         try {
             $result = $this->bookings->createConfirmed(
                 $attributes,
-                $setting->daily_booking_limit,
+                $setting,
                 CarbonImmutable::now(),
             );
         } catch (DomainException $exception) {
-            $field = str_contains($exception->getMessage(), 'full')
+            $field = str_contains($exception->getMessage(), 'date is full')
                 ? 'visit_date'
                 : 'visit_time';
 

@@ -32,7 +32,8 @@ class PublicAvailabilityController extends Controller
             (string) config('app.business_timezone'),
         );
         $start = (string) ($request->validated('start_date') ?? $now->addDay()->toDateString());
-        $end = (string) ($request->validated('end_date') ?? $now->addDays(100)->toDateString());
+        $end = (string) ($request->validated('end_date')
+            ?? $now->addDays($setting->booking_window_days)->toDateString());
         $zoneSearch = trim((string) ($request->validated('zone_search') ?? ''));
 
         $zones = Zone::query()
@@ -59,7 +60,9 @@ class PublicAvailabilityController extends Controller
         return response()->json([
             'server_time' => $now->toIso8601String(),
             'earliest_date' => $now->addDay()->toDateString(),
-            'latest_date' => $now->addDays(100)->toDateString(),
+            'latest_date' => $now->addDays($setting->booking_window_days)->toDateString(),
+            'booking_window_days' => $setting->booking_window_days,
+            'booking_limit_mode' => $setting->booking_limit_mode,
             'daily_booking_limit' => $setting->daily_booking_limit,
             'form_token' => $this->formToken->issue(),
             'zones' => $zones,
@@ -67,7 +70,7 @@ class PublicAvailabilityController extends Controller
             'dates' => $this->bookings->dateAvailability(
                 $start,
                 $end,
-                $setting->daily_booking_limit,
+                $setting,
             ),
         ]);
     }
@@ -84,7 +87,7 @@ class PublicAvailabilityController extends Controller
         $now = CarbonImmutable::now();
         $availability = $this->bookings->slotAvailability(
             $date,
-            $setting->daily_booking_limit,
+            $setting,
             $now,
         );
 

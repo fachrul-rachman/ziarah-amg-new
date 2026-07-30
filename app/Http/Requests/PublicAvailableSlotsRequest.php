@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Setting;
 use App\Services\BookingService;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Validation\Validator;
@@ -34,6 +35,7 @@ class PublicAvailableSlotsRequest extends FormRequest
                 if (! app(BookingService::class)->isWithinDateWindow(
                     (string) $this->input('date'),
                     CarbonImmutable::now(),
+                    Setting::query()->find(1)->booking_window_days ?? 100,
                 )) {
                     $validator->errors()->add(
                         'date',

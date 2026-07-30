@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Setting;
 use App\Models\TimeSlot;
 use App\Rules\BookingPhoneNumber;
 use App\Services\BookingFormToken;
@@ -34,7 +35,7 @@ class StorePublicBookingRequest extends FormRequest
             ],
             'lot_number' => ['required', 'string', 'max:50', 'regex:/^[A-Z0-9]+$/'],
             'tent_required' => ['required', 'boolean'],
-            'chair_count' => ['required', 'integer', 'between:2,6'],
+            'chair_count' => ['required', 'integer', 'min:0', 'max:500'],
             'customer_name' => ['required', 'string', 'max:255'],
             'customer_email' => ['required', 'email:rfc', 'max:255'],
             'customer_phone' => [
@@ -58,6 +59,7 @@ class StorePublicBookingRequest extends FormRequest
             'customer_email.required' => 'Email wajib diisi.',
             'customer_email.email' => 'Format email tidak valid.',
             'customer_phone.required' => 'Nomor telepon wajib diisi.',
+            'chair_count.max' => 'Jumlah kursi maksimal 500.',
         ];
     }
 
@@ -101,7 +103,11 @@ class StorePublicBookingRequest extends FormRequest
                 $date = (string) $this->input('visit_date');
                 $time = (string) $this->input('visit_time');
 
-                if (! $service->isWithinDateWindow($date, $now)) {
+                if (! $service->isWithinDateWindow(
+                    $date,
+                    $now,
+                    Setting::query()->find(1)->booking_window_days ?? 100,
+                )) {
                     $validator->errors()->add(
                         'visit_date',
                         'The selected date is outside the booking window.',

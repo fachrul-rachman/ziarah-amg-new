@@ -128,7 +128,10 @@ test('admin can store valid global settings without exposing the webhook', funct
 
     $this->actingAs($admin)->put('/admin/settings', [
         '_token' => 'test-token',
+        'booking_window_days' => 7,
+        'booking_limit_mode' => 'hourly',
         'daily_booking_limit' => 25,
+        'hourly_booking_limit' => 30,
         'operations_email' => ' OPERATIONS@EXAMPLE.COM ',
         'discord_webhook' => $webhook,
         'clear_discord_webhook' => false,
@@ -141,7 +144,10 @@ test('admin can store valid global settings without exposing the webhook', funct
     $setting = Setting::query()->sole();
 
     expect($setting->id)->toBe(1)
+        ->and($setting->booking_window_days)->toBe(7)
+        ->and($setting->booking_limit_mode)->toBe('hourly')
         ->and($setting->daily_booking_limit)->toBe(25)
+        ->and($setting->hourly_booking_limit)->toBe(30)
         ->and($setting->operations_email)->toBe('operations@example.com')
         ->and($setting->discord_webhook)->toBe($webhook)
         ->and($setting->embed_allowed_origins)->toBe([
@@ -171,7 +177,10 @@ test('blank webhook preserves it and explicit clear removes it', function () {
 
     $payload = [
         '_token' => 'test-token',
+        'booking_window_days' => 100,
+        'booking_limit_mode' => 'daily',
         'daily_booking_limit' => 30,
+        'hourly_booking_limit' => null,
         'operations_email' => 'operations@example.com',
         'discord_webhook' => null,
         'clear_discord_webhook' => false,
@@ -200,7 +209,10 @@ test('invalid global settings are rejected server side', function (
 ) {
     $payload = [
         '_token' => 'test-token',
+        'booking_window_days' => 100,
+        'booking_limit_mode' => 'daily',
         'daily_booking_limit' => 20,
+        'hourly_booking_limit' => null,
         'operations_email' => 'operations@example.com',
         'discord_webhook' => null,
         'clear_discord_webhook' => false,
@@ -214,6 +226,22 @@ test('invalid global settings are rejected server side', function (
 
     expect(Setting::query()->count())->toBe(0);
 })->with([
+    'booking window below one day' => [
+        ['booking_window_days' => 0],
+        'booking_window_days',
+    ],
+    'booking window above one hundred days' => [
+        ['booking_window_days' => 101],
+        'booking_window_days',
+    ],
+    'invalid booking limit mode' => [
+        ['booking_limit_mode' => 'weekly'],
+        'booking_limit_mode',
+    ],
+    'hourly mode without hourly limit' => [[
+        'booking_limit_mode' => 'hourly',
+        'hourly_booking_limit' => null,
+    ], 'hourly_booking_limit'],
     'non-positive daily limit' => [
         ['daily_booking_limit' => 0],
         'daily_booking_limit',
