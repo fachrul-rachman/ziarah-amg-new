@@ -2,9 +2,9 @@ x-app-environment: &app-environment
   DB_CONNECTION: ${DB_CONNECTION}
   DB_HOST: ${DB_HOST}
   DB_PORT: ${DB_PORT}
-DB_DATABASE: ${DB_DATABASE}
-DB_USERNAME: ${DB_USERNAME}
-DB_PASSWORD: ${DB_PASSWORD}
+  DB_DATABASE: ${DB_DATABASE}
+  DB_USERNAME: ${DB_USERNAME}
+  DB_PASSWORD: ${DB_PASSWORD}
 
 x-app: &app
   image: ${APP_IMAGE:-ziarah-amg-app:local}
