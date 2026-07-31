@@ -732,7 +732,7 @@ function VisitStep({
                 id="lot-number"
                 label="Nomor lot"
                 error={errors.lot_number}
-                hint="Contoh: DSD810"
+                hint="Contoh: A-12"
             >
                 <input
                     id="lot-number"
