@@ -662,7 +662,7 @@ function RescheduleForm({
                                           ...current,
                                           lot_number: event.target.value
                                               .toUpperCase()
-                                              .replace(/[^A-Z0-9]/g, ''),
+                                              .replace(/[^A-Z0-9/-]/g, ''),
                                       }
                                     : current,
                             )

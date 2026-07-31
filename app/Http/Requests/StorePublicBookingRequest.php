@@ -33,7 +33,7 @@ class StorePublicBookingRequest extends FormRequest
                     fn (Builder $query): Builder => $query->where('is_active', true),
                 ),
             ],
-            'lot_number' => ['required', 'string', 'max:50', 'regex:/^[A-Z0-9]+$/'],
+            'lot_number' => ['required', 'string', 'max:50', 'regex:/^[A-Z0-9]+([\/-][A-Z0-9]+)*$/'],
             'tent_required' => ['required', 'boolean'],
             'chair_count' => ['required', 'integer', 'min:0', 'max:500'],
             'customer_name' => ['required', 'string', 'max:255'],

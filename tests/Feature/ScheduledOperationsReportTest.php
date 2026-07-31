@@ -279,21 +279,18 @@ test('failed discord delivery is recorded safely and remains retryable', functio
         ->not->toContain('private-token');
 });
 
-test('scheduler reconciles all report runs every five minutes in Asia Jakarta', function () {
+test('scheduler reconciles only the two operational reports every five minutes', function () {
     $events = collect(Schedule::events())->keyBy('description');
     $morning = $events->get('operations-report:morning');
-    $morningFinal = $events->get('operations-report:morning-final');
     $afternoon = $events->get('operations-report:afternoon');
 
     expect($morning)->not->toBeNull()
         ->and($morning->expression)->toBe('*/5 * * * *')
         ->and($morning->timezone)->toBe('Asia/Jakarta')
-        ->and($morningFinal)->not->toBeNull()
-        ->and($morningFinal->expression)->toBe('*/5 * * * *')
-        ->and($morningFinal->timezone)->toBe('Asia/Jakarta')
         ->and($afternoon)->not->toBeNull()
         ->and($afternoon->expression)->toBe('*/5 * * * *')
-        ->and($afternoon->timezone)->toBe('Asia/Jakarta');
+        ->and($afternoon->timezone)->toBe('Asia/Jakarta')
+        ->and($events)->not->toHaveKey('operations-report:morning-final');
 });
 
 test('scheduler queues only report periods inside their reconciliation window', function () {
@@ -305,7 +302,6 @@ test('scheduler queues only report periods inside their reconciliation window', 
     ));
 
     expect($events->get('operations-report:morning')->filtersPass(app()))->toBeFalse()
-        ->and($events->get('operations-report:morning-final')->filtersPass(app()))->toBeTrue()
         ->and($events->get('operations-report:afternoon')->filtersPass(app()))->toBeFalse();
 });
 

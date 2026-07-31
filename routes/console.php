@@ -66,13 +66,6 @@ Schedule::job(new PrepareOperationsReport(OperationsReportPeriod::Morning))
     ->when(fn (): bool => OperationsReportPeriod::Morning->shouldPrepare(now()))
     ->withoutOverlapping(10);
 
-Schedule::job(new PrepareOperationsReport(OperationsReportPeriod::MorningFinal))
-    ->name('operations-report:morning-final')
-    ->everyFiveMinutes()
-    ->timezone((string) config('app.business_timezone'))
-    ->when(fn (): bool => OperationsReportPeriod::MorningFinal->shouldPrepare(now()))
-    ->withoutOverlapping(10);
-
 Schedule::job(new PrepareOperationsReport(OperationsReportPeriod::Afternoon))
     ->name('operations-report:afternoon')
     ->everyFiveMinutes()

@@ -244,9 +244,9 @@ export default function Booking({
                 nextErrors.zone_id = 'Pilih zona.';
             }
 
-            if (!/^[A-Z0-9]+$/.test(data.lot_number)) {
+            if (!/^[A-Z0-9]+([/-][A-Z0-9]+)*$/.test(data.lot_number)) {
                 nextErrors.lot_number =
-                    'Lot hanya boleh berisi huruf dan angka.';
+                    'Lot hanya boleh berisi huruf, angka, tanda - atau /.';
             }
         }
 
@@ -744,7 +744,7 @@ function VisitStep({
                             ...current,
                             lot_number: event.target.value
                                 .toUpperCase()
-                                .replace(/[^A-Z0-9]/g, ''),
+                                .replace(/[^A-Z0-9/-]/g, ''),
                         }))
                     }
                     className={inputClass}

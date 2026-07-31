@@ -54,6 +54,7 @@ test('availability includes a protected form start token', function () {
 
 test('a valid public submission creates one confirmed booking safely', function () {
     $payload = validPublicBookingPayload();
+    $payload['lot_number'] = 'dsd-810/2';
     CarbonImmutable::setTestNow(now()->addSeconds(4));
 
     $response = $this->postJson('/api/public/bookings', $payload);
@@ -63,14 +64,14 @@ test('a valid public submission creates one confirmed booking safely', function 
         ->assertJsonPath('visit.date', '2026-07-31')
         ->assertJsonPath('visit.time', '10:00')
         ->assertJsonPath('visit.zone', 'Mawar')
-        ->assertJsonPath('visit.lot', 'DSD810')
+        ->assertJsonPath('visit.lot', 'DSD-810/2')
         ->assertJsonMissingPath('management_token')
         ->assertJsonStructure(['booking_reference']);
 
     $booking = Booking::query()->sole();
 
     expect($booking->status)->toBe(BookingStatus::Confirmed)
-        ->and($booking->lot_number)->toBe('DSD810')
+        ->and($booking->lot_number)->toBe('DSD-810/2')
         ->and($booking->customer_email)->toBe('customer@example.com')
         ->and(BookingManagementToken::query()->count())->toBe(1)
         ->and(BookingManagementToken::query()->value('token_hash'))->toHaveLength(64);
@@ -99,7 +100,7 @@ test('required booking fields and business values are validated server side', fu
         'visit_date' => '2026-07-30',
         'visit_time' => '09:00',
     ], 'visit_time'],
-    'invalid lot' => [['lot_number' => 'A-1'], 'lot_number'],
+    'invalid lot' => [['lot_number' => 'A_1'], 'lot_number'],
     'chair below minimum' => [['chair_count' => -1], 'chair_count'],
     'chair above maximum' => [['chair_count' => 501], 'chair_count'],
     'tent missing' => [['tent_required' => null], 'tent_required'],

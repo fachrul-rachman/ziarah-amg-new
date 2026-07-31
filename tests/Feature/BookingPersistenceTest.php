@@ -167,7 +167,7 @@ test('database accepts chair boundaries and rejects counts above five hundred', 
         ->toThrow(QueryException::class);
 });
 
-test('database rejects lot numbers outside uppercase alphanumeric format', function () {
+test('database allows approved lot separators and rejects other characters', function () {
     $now = CarbonImmutable::parse('2026-07-29 10:00:00', 'Asia/Jakarta');
     [$zone, $date] = configuredBookingTarget($now);
     $booking = app(BookingService::class)->createConfirmed(
@@ -176,7 +176,11 @@ test('database rejects lot numbers outside uppercase alphanumeric format', funct
         now: $now,
     )['booking'];
 
-    expect(fn () => DB::table('bookings')->where('id', $booking->id)->update(['lot_number' => '=1+1']))
+    DB::table('bookings')->where('id', $booking->id)->update(['lot_number' => 'A-1/2']);
+
+    expect(DB::table('bookings')->where('id', $booking->id)->value('lot_number'))
+        ->toBe('A-1/2')
+        ->and(fn () => DB::table('bookings')->where('id', $booking->id)->update(['lot_number' => '=1+1']))
         ->toThrow(QueryException::class);
 });
 

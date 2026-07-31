@@ -133,7 +133,7 @@ test('admin can update a future booking without emailing the customer', function
             'zone_id' => $melati->id,
             'customer_name' => '  Budi Santoso  ',
             'customer_email' => ' BUDI@EXAMPLE.COM ',
-            'lot_number' => 'new22',
+            'lot_number' => 'new-22/1',
             'additional_notes' => '  Datang bersama keluarga.  ',
         ]))
         ->assertRedirect("/admin/bookings/{$booking->id}")
@@ -144,7 +144,7 @@ test('admin can update a future booking without emailing the customer', function
     expect($booking->zone_name_snapshot)->toBe('Melati')
         ->and($booking->customer_name)->toBe('Budi Santoso')
         ->and($booking->customer_email)->toBe('budi@example.com')
-        ->and($booking->lot_number)->toBe('NEW22')
+        ->and($booking->lot_number)->toBe('NEW-22/1')
         ->and($booking->additional_notes)->toBe('Datang bersama keluarga.');
 
     Mail::assertNothingQueued();

@@ -182,10 +182,12 @@ test('management token reads are rate limited separately', function () {
 test('reschedule atomically updates booking rotates token and queues new link', function () {
     ['booking' => $booking, 'token' => $oldToken] = phaseSevenManagedBooking();
     $newZone = Zone::query()->where('name', 'Melati')->firstOrFail();
+    $payload = phaseSevenReschedulePayload($newZone);
+    $payload['lot_number'] = 'new-22/1';
 
     $this->putJson(
         "/api/manage/bookings/{$oldToken}/reschedule",
-        phaseSevenReschedulePayload($newZone),
+        $payload,
     )
         ->assertOk()
         ->assertJsonPath('status', 'confirmed')
@@ -198,7 +200,7 @@ test('reschedule atomically updates booking rotates token and queues new link', 
 
     expect($booking->visit_date->toDateString())->toBe('2026-08-02')
         ->and($booking->zone_name_snapshot)->toBe('Melati')
-        ->and($booking->lot_number)->toBe('NEW22')
+        ->and($booking->lot_number)->toBe('NEW-22/1')
         ->and($booking->managementTokens)->toHaveCount(2)
         ->and($booking->managementTokens->whereNotNull('revoked_at'))->toHaveCount(1);
 
@@ -351,7 +353,7 @@ test('reschedule deadline and target rules are enforced server side', function (
     'date outside target window' => [['visit_date' => '2026-07-29'], 'visit_date'],
     'inactive zone' => [['zone_id' => 999999], 'zone_id'],
     'inactive slot' => [['visit_time' => '12:00'], 'visit_time'],
-    'invalid lot' => [['lot_number' => 'A-1'], 'lot_number'],
+    'invalid lot' => [['lot_number' => 'A_1'], 'lot_number'],
     'chair range' => [['chair_count' => 501], 'chair_count'],
 ]);
 
