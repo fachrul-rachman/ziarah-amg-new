@@ -61,12 +61,21 @@ Schedule::command('bookings:complete')
 
 Schedule::job(new PrepareOperationsReport(OperationsReportPeriod::Morning))
     ->name('operations-report:morning')
-    ->dailyAt('15:00')
+    ->everyFiveMinutes()
     ->timezone((string) config('app.business_timezone'))
-    ->withoutOverlapping();
+    ->when(fn (): bool => OperationsReportPeriod::Morning->shouldPrepare(now()))
+    ->withoutOverlapping(10);
+
+Schedule::job(new PrepareOperationsReport(OperationsReportPeriod::MorningFinal))
+    ->name('operations-report:morning-final')
+    ->everyFiveMinutes()
+    ->timezone((string) config('app.business_timezone'))
+    ->when(fn (): bool => OperationsReportPeriod::MorningFinal->shouldPrepare(now()))
+    ->withoutOverlapping(10);
 
 Schedule::job(new PrepareOperationsReport(OperationsReportPeriod::Afternoon))
     ->name('operations-report:afternoon')
-    ->dailyAt('07:00')
+    ->everyFiveMinutes()
     ->timezone((string) config('app.business_timezone'))
-    ->withoutOverlapping();
+    ->when(fn (): bool => OperationsReportPeriod::Afternoon->shouldPrepare(now()))
+    ->withoutOverlapping(10);

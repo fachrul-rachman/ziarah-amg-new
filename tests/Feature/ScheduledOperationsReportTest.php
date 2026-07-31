@@ -48,9 +48,45 @@ test('report periods resolve exact Jakarta dates and non overlapping ranges', fu
     expect(OperationsReportPeriod::Morning->targetDate($now))->toBe('2026-07-31')
         ->and(OperationsReportPeriod::Morning->startTime())->toBe('07:00:00')
         ->and(OperationsReportPeriod::Morning->endTime())->toBe('11:00:00')
+        ->and(OperationsReportPeriod::MorningFinal->targetDate($now))->toBe('2026-07-31')
+        ->and(OperationsReportPeriod::MorningFinal->startTime())->toBe('07:00:00')
+        ->and(OperationsReportPeriod::MorningFinal->endTime())->toBe('11:00:00')
         ->and(OperationsReportPeriod::Afternoon->targetDate($now))->toBe('2026-07-30')
         ->and(OperationsReportPeriod::Afternoon->startTime())->toBe('12:00:00')
         ->and(OperationsReportPeriod::Afternoon->endTime())->toBe('17:00:00');
+});
+
+test('report reconciliation windows cover deploys and the final morning cutoff', function () {
+    expect(OperationsReportPeriod::Morning->shouldPrepare(
+        CarbonImmutable::parse('2026-07-30 14:59:00', 'Asia/Jakarta'),
+    ))->toBeFalse()
+        ->and(OperationsReportPeriod::Morning->shouldPrepare(
+            CarbonImmutable::parse('2026-07-30 15:00:00', 'Asia/Jakarta'),
+        ))->toBeTrue()
+        ->and(OperationsReportPeriod::Morning->shouldPrepare(
+            CarbonImmutable::parse('2026-07-30 17:00:00', 'Asia/Jakarta'),
+        ))->toBeTrue()
+        ->and(OperationsReportPeriod::MorningFinal->shouldPrepare(
+            CarbonImmutable::parse('2026-07-30 17:04:00', 'Asia/Jakarta'),
+        ))->toBeFalse()
+        ->and(OperationsReportPeriod::MorningFinal->shouldPrepare(
+            CarbonImmutable::parse('2026-07-30 17:05:00', 'Asia/Jakarta'),
+        ))->toBeTrue()
+        ->and(OperationsReportPeriod::MorningFinal->shouldPrepare(
+            CarbonImmutable::parse('2026-07-31 06:55:00', 'Asia/Jakarta'),
+        ))->toBeTrue()
+        ->and(OperationsReportPeriod::MorningFinal->targetDate(
+            CarbonImmutable::parse('2026-07-31 06:55:00', 'Asia/Jakarta'),
+        ))->toBe('2026-07-31')
+        ->and(OperationsReportPeriod::MorningFinal->shouldPrepare(
+            CarbonImmutable::parse('2026-07-31 07:00:00', 'Asia/Jakarta'),
+        ))->toBeFalse()
+        ->and(OperationsReportPeriod::Afternoon->shouldPrepare(
+            CarbonImmutable::parse('2026-07-30 07:00:00', 'Asia/Jakarta'),
+        ))->toBeTrue()
+        ->and(OperationsReportPeriod::Afternoon->shouldPrepare(
+            CarbonImmutable::parse('2026-07-30 17:01:00', 'Asia/Jakarta'),
+        ))->toBeFalse();
 });
 
 test('morning preparation dispatches each configured channel once', function () {
@@ -79,6 +115,27 @@ test('morning preparation dispatches each configured channel once', function () 
 
     Queue::assertPushed(SendOperationsReportEmail::class, 1);
     Queue::assertPushed(SendOperationsReportDiscord::class, 1);
+});
+
+test('final morning preparation is distinct and idempotent', function () {
+    Queue::fake();
+    Setting::query()->findOrFail(1)->update([
+        'discord_webhook' => 'https://discord.com/api/webhooks/123456/test-token',
+    ]);
+    phaseNineBooking(['visit_date' => '2026-07-31', 'visit_time' => '10:00:00']);
+
+    (new PrepareOperationsReport(OperationsReportPeriod::Morning))->handle();
+    $final = new PrepareOperationsReport(OperationsReportPeriod::MorningFinal);
+    $final->handle();
+    $final->handle();
+
+    expect(ReportDispatch::query()->count())->toBe(4)
+        ->and(ReportDispatch::query()
+            ->where('period', OperationsReportPeriod::MorningFinal->value)
+            ->count())->toBe(2);
+
+    Queue::assertPushed(SendOperationsReportEmail::class, 2);
+    Queue::assertPushed(SendOperationsReportDiscord::class, 2);
 });
 
 test('afternoon preparation uses the current date and excludes morning bookings', function () {
@@ -222,17 +279,34 @@ test('failed discord delivery is recorded safely and remains retryable', functio
         ->not->toContain('private-token');
 });
 
-test('scheduler registers both report runs in Asia Jakarta', function () {
+test('scheduler reconciles all report runs every five minutes in Asia Jakarta', function () {
     $events = collect(Schedule::events())->keyBy('description');
     $morning = $events->get('operations-report:morning');
+    $morningFinal = $events->get('operations-report:morning-final');
     $afternoon = $events->get('operations-report:afternoon');
 
     expect($morning)->not->toBeNull()
-        ->and($morning->expression)->toBe('0 15 * * *')
+        ->and($morning->expression)->toBe('*/5 * * * *')
         ->and($morning->timezone)->toBe('Asia/Jakarta')
+        ->and($morningFinal)->not->toBeNull()
+        ->and($morningFinal->expression)->toBe('*/5 * * * *')
+        ->and($morningFinal->timezone)->toBe('Asia/Jakarta')
         ->and($afternoon)->not->toBeNull()
-        ->and($afternoon->expression)->toBe('0 7 * * *')
+        ->and($afternoon->expression)->toBe('*/5 * * * *')
         ->and($afternoon->timezone)->toBe('Asia/Jakarta');
+});
+
+test('scheduler queues only report periods inside their reconciliation window', function () {
+    $events = collect(Schedule::events())->keyBy('description');
+
+    CarbonImmutable::setTestNow(CarbonImmutable::parse(
+        '2026-07-30 17:05:00',
+        'Asia/Jakarta',
+    ));
+
+    expect($events->get('operations-report:morning')->filtersPass(app()))->toBeFalse()
+        ->and($events->get('operations-report:morning-final')->filtersPass(app()))->toBeTrue()
+        ->and($events->get('operations-report:afternoon')->filtersPass(app()))->toBeFalse();
 });
 
 /** @param array<string, mixed> $overrides */
