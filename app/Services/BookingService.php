@@ -6,6 +6,7 @@ use App\Enums\BookingStatus;
 use App\Models\Booking;
 use App\Models\BookingDateLock;
 use App\Models\BookingManagementToken;
+use App\Models\OperationsReportConfiguration;
 use App\Models\Setting;
 use App\Models\TimeSlot;
 use App\Models\Zone;
@@ -42,9 +43,16 @@ class BookingService
         string $visitDate,
         string $visitTime,
         CarbonInterface $now,
+        int $minimumLeadHours = Setting::DEFAULT_LEAD_HOURS,
     ): bool {
         return $this->visitStartsAt($visitDate, $visitTime)
-            ->greaterThanOrEqualTo($this->businessNow($now)->addHours(18));
+            ->greaterThanOrEqualTo($this->businessNow($now)->addHours($minimumLeadHours));
+    }
+
+    public function minimumLeadHours(string $visitDate): int
+    {
+        return OperationsReportConfiguration::forVisitDate($visitDate)->minimum_lead_hours
+            ?? Setting::DEFAULT_LEAD_HOURS;
     }
 
     public function canReschedule(Booking $booking, CarbonInterface $now): bool
@@ -248,6 +256,7 @@ class BookingService
                 ->pluck('aggregate', 'visit_time')
             : collect();
         $dateFull = ! $hourly && $usedQuery->count() >= $limit;
+        $minimumLeadHours = $this->minimumLeadHours($visitDate);
         $isFull = $dateFull || ($hourly && $slots->isNotEmpty() && $slots->every(
             fn (TimeSlot $slot): bool => (int) ($usedByTime[(string) $slot->start_time] ?? 0) >= $limit,
         ));
@@ -260,11 +269,13 @@ class BookingService
                 $limit,
                 $now,
                 $usedByTime,
+                $minimumLeadHours,
             ): array {
                 $meetsLeadTime = $this->meetsLeadTime(
                     $visitDate,
                     (string) $slot->start_time,
                     $now,
+                    $minimumLeadHours,
                 );
                 $slotFull = $hourly
                     && (int) ($usedByTime[(string) $slot->start_time] ?? 0) >= $limit;
@@ -298,7 +309,12 @@ class BookingService
         $visitTime = $this->normaliseTime((string) $attributes['visit_time']);
 
         if (! $this->isWithinDateWindow($visitDate, $now, $setting->booking_window_days)
-            || ! $this->meetsLeadTime($visitDate, $visitTime, $now)) {
+            || ! $this->meetsLeadTime(
+                $visitDate,
+                $visitTime,
+                $now,
+                $this->minimumLeadHours($visitDate),
+            )) {
             throw new DomainException('The selected visit time is not available.');
         }
 
@@ -406,7 +422,12 @@ class BookingService
         $visitTime = $this->normaliseTime((string) $attributes['visit_time']);
 
         if (! $this->isWithinDateWindow($visitDate, $now, $setting->booking_window_days)
-            || ! $this->meetsLeadTime($visitDate, $visitTime, $now)) {
+            || ! $this->meetsLeadTime(
+                $visitDate,
+                $visitTime,
+                $now,
+                $this->minimumLeadHours($visitDate),
+            )) {
             throw new DomainException('The selected visit time is not available.');
         }
 

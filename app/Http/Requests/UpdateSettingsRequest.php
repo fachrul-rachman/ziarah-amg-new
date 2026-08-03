@@ -3,6 +3,9 @@
 namespace App\Http\Requests;
 
 use App\Models\Setting;
+use App\Models\TimeSlot;
+use App\Services\OperationsReportPlanner;
+use DomainException;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -56,6 +59,10 @@ class UpdateSettingsRequest extends FormRequest
                 'max:255',
                 'distinct:ignore_case',
             ],
+            'minimum_lead_hours' => ['required', 'integer', 'between:1,65535'],
+            'report_schedules' => ['required', 'array', 'min:1', 'max:3'],
+            'report_schedules.*.day_offset' => ['required', 'integer', Rule::in([-1, 0])],
+            'report_schedules.*.time' => ['required', 'date_format:H:i'],
         ];
     }
 
@@ -87,6 +94,50 @@ class UpdateSettingsRequest extends FormRequest
                         );
                     }
                 }
+
+                if (! $validator->errors()->has('booking_window_days')
+                    && ! $validator->errors()->has('minimum_lead_hours')
+                    && (int) $this->input('minimum_lead_hours')
+                        > (int) $this->input('booking_window_days') * 24) {
+                    $validator->errors()->add(
+                        'minimum_lead_hours',
+                        'Minimal waktu booking tidak boleh melebihi rentang hari booking.',
+                    );
+                }
+
+                if (collect($validator->errors()->keys())->contains(
+                    fn (string $key): bool => $key === 'minimum_lead_hours'
+                        || Str::startsWith($key, 'report_schedules'),
+                )) {
+                    return;
+                }
+
+                $times = TimeSlot::query()
+                    ->orderBy('start_time')
+                    ->pluck('start_time')
+                    ->map(fn (mixed $time): string => (string) $time)
+                    ->values()
+                    ->all();
+
+                if ($times === []) {
+                    $validator->errors()->add(
+                        'report_schedules',
+                        'Tambahkan minimal satu jam kunjungan sebelum mengatur laporan.',
+                    );
+
+                    return;
+                }
+
+                try {
+                    app(OperationsReportPlanner::class)->plan(
+                        '2030-01-02',
+                        (int) $this->input('minimum_lead_hours'),
+                        $this->input('report_schedules'),
+                        $times,
+                    );
+                } catch (DomainException $exception) {
+                    $validator->errors()->add('report_schedules', $exception->getMessage());
+                }
             },
         ];
     }
@@ -96,6 +147,7 @@ class UpdateSettingsRequest extends FormRequest
         $email = $this->input('operations_email');
         $webhook = $this->input('discord_webhook');
         $origins = $this->input('embed_allowed_origins');
+        $schedules = $this->input('report_schedules');
 
         $this->merge([
             'operations_email' => is_string($email)
@@ -112,6 +164,20 @@ class UpdateSettingsRequest extends FormRequest
                     $origins,
                 )
                 : $origins,
+            'report_schedules' => is_array($schedules)
+                ? collect($schedules)
+                    ->map(fn (mixed $schedule): mixed => is_array($schedule) ? [
+                        'day_offset' => (int) ($schedule['day_offset'] ?? 0),
+                        'time' => is_string($schedule['time'] ?? null)
+                            ? substr(trim($schedule['time']), 0, 5)
+                            : ($schedule['time'] ?? null),
+                    ] : $schedule)
+                    ->sortBy(fn (mixed $schedule): string => is_array($schedule)
+                        ? sprintf('%+03d %s', $schedule['day_offset'], $schedule['time'])
+                        : '')
+                    ->values()
+                    ->all()
+                : $schedules,
         ]);
     }
 

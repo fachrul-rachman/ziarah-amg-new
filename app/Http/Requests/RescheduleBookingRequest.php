@@ -67,20 +67,22 @@ class RescheduleBookingRequest extends FormRequest
                 $now = CarbonImmutable::now();
                 $date = (string) $this->input('visit_date');
                 $time = (string) $this->input('visit_time');
+                $setting = Setting::query()->find(1) ?? new Setting;
+                $leadHours = $service->minimumLeadHours($date);
 
                 if (! $service->isWithinDateWindow(
                     $date,
                     $now,
-                    Setting::query()->find(1)->booking_window_days ?? 100,
+                    $setting->booking_window_days ?? 100,
                 )) {
                     $validator->errors()->add(
                         'visit_date',
                         'The selected date is outside the booking window.',
                     );
-                } elseif (! $service->meetsLeadTime($date, $time, $now)) {
+                } elseif (! $service->meetsLeadTime($date, $time, $now, $leadHours)) {
                     $validator->errors()->add(
                         'visit_time',
-                        'The selected time must be at least 18 hours from now.',
+                        "The selected time must be at least {$leadHours} hours from now.",
                     );
                 }
 

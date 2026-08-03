@@ -64,6 +64,9 @@ class SendOperationsReportEmail implements ShouldQueue
                 $dispatch->report_date->toDateString(),
                 $dispatch->period,
                 $count,
+                $dispatch->title(),
+                $dispatch->startTime(),
+                $dispatch->endTime(),
             ));
             $dispatch->markSent();
         } catch (Throwable $exception) {

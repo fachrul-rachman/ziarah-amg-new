@@ -106,6 +106,7 @@ export default function Booking({
 }) {
     const [options, setOptions] = useState<BookingOptions | null>(null);
     const [slots, setSlots] = useState<TimeSlot[]>([]);
+    const [minimumLeadHours, setMinimumLeadHours] = useState(18);
     const [data, setData] = useState<BookingData>(initialData);
     const [step, setStep] = useState(0);
     const [zoneSearch, setZoneSearch] = useState('');
@@ -189,6 +190,7 @@ export default function Booking({
             );
             const body = (await response.json()) as {
                 slots?: TimeSlot[];
+                minimum_lead_hours?: number;
                 message?: string;
             };
 
@@ -197,6 +199,7 @@ export default function Booking({
             }
 
             setSlots(body.slots);
+            setMinimumLeadHours(body.minimum_lead_hours ?? 18);
         } catch {
             setSlots([]);
             setErrors((current) => ({
@@ -476,6 +479,7 @@ export default function Booking({
                                         errors={errors}
                                         slots={slots}
                                         loadingSlots={loadingSlots}
+                                        minimumLeadHours={minimumLeadHours}
                                         filteredZones={filteredZones}
                                         zoneSearch={zoneSearch}
                                         onZoneSearch={setZoneSearch}
@@ -576,6 +580,7 @@ function VisitStep({
     errors,
     slots,
     loadingSlots,
+    minimumLeadHours,
     filteredZones,
     zoneSearch,
     onZoneSearch,
@@ -587,6 +592,7 @@ function VisitStep({
     errors: Record<string, string>;
     slots: TimeSlot[];
     loadingSlots: boolean;
+    minimumLeadHours: number;
     filteredZones: Zone[];
     zoneSearch: string;
     onZoneSearch: (value: string) => void;
@@ -645,7 +651,7 @@ function VisitStep({
                                 }
                                 title={
                                     slot.disabled_reason === 'minimum_lead_time'
-                                        ? 'Kurang dari 18 jam'
+                                        ? `Kurang dari ${minimumLeadHours} jam`
                                         : slot.disabled_reason === 'date_full'
                                           ? 'Tanggal penuh'
                                           : slot.disabled_reason === 'slot_full'

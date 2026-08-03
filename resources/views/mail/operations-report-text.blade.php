@@ -1,8 +1,8 @@
 Assalamualaikum Wr. Wb.
 
-Terlampir {{ $period->title() }} untuk tanggal {{ $reportDate }}.
+Terlampir {{ $periodTitle }} untuk tanggal {{ $reportDate }}.
 
-Rentang waktu: {{ substr($period->startTime(), 0, 5) }} sampai {{ substr($period->endTime(), 0, 5) }} WIB.
+Rentang waktu: {{ substr($startTime, 0, 5) }} sampai {{ substr($endTime, 0, 5) }} WIB.
 Jumlah booking: {{ $bookingCount }}.
 
 Wassalamualaikum Wr. Wb.

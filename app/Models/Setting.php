@@ -17,6 +17,13 @@ class Setting extends Model
 
     public const string LIMIT_HOURLY = 'hourly';
 
+    public const int DEFAULT_LEAD_HOURS = 18;
+
+    public const array DEFAULT_REPORT_SCHEDULES = [
+        ['day_offset' => -1, 'time' => '15:00'],
+        ['day_offset' => 0, 'time' => '07:00'],
+    ];
+
     public $incrementing = false;
 
     protected $attributes = [

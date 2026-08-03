@@ -9,7 +9,8 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * @property CarbonImmutable $report_date
- * @property OperationsReportPeriod $period
+ * @property string $period
+ * @property list<string>|null $visit_times
  * @property string $channel
  * @property string $status
  * @property int $attempt_count
@@ -26,15 +27,16 @@ class ReportDispatch extends Model
         'attempt_count',
         'sent_at',
         'last_error_summary',
+        'visit_times',
     ];
 
     protected function casts(): array
     {
         return [
             'report_date' => 'immutable_date',
-            'period' => OperationsReportPeriod::class,
             'attempt_count' => 'integer',
             'sent_at' => 'immutable_datetime',
+            'visit_times' => 'array',
         ];
     }
 
@@ -44,12 +46,37 @@ class ReportDispatch extends Model
         return Booking::query()
             ->confirmed()
             ->whereDate('visit_date', $this->report_date->toDateString())
-            ->whereBetween('visit_time', [
-                $this->period->startTime(),
-                $this->period->endTime(),
-            ])
+            ->when(
+                $this->visit_times !== null && $this->visit_times !== [],
+                fn (Builder $query): Builder => $query->whereIn('visit_time', $this->visit_times),
+                fn (Builder $query): Builder => $query->whereBetween('visit_time', [
+                    $this->legacyPeriod()->startTime(),
+                    $this->legacyPeriod()->endTime(),
+                ]),
+            )
             ->orderBy('visit_time')
             ->orderBy('id');
+    }
+
+    public function title(): string
+    {
+        return $this->visit_times === null || $this->visit_times === []
+            ? $this->legacyPeriod()->title()
+            : 'Laporan Persiapan Ziarah';
+    }
+
+    public function startTime(): string
+    {
+        return $this->visit_times === null || $this->visit_times === []
+            ? $this->legacyPeriod()->startTime()
+            : $this->visit_times[0];
+    }
+
+    public function endTime(): string
+    {
+        return $this->visit_times === null || $this->visit_times === []
+            ? $this->legacyPeriod()->endTime()
+            : $this->visit_times[count($this->visit_times) - 1];
     }
 
     public function startAttempt(): void
@@ -84,5 +111,10 @@ class ReportDispatch extends Model
             'status' => 'skipped',
             'last_error_summary' => $summary,
         ])->save();
+    }
+
+    private function legacyPeriod(): OperationsReportPeriod
+    {
+        return OperationsReportPeriod::from($this->period);
     }
 }

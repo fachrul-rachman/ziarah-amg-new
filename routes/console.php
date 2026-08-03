@@ -1,7 +1,9 @@
 <?php
 
 use App\Enums\OperationsReportPeriod;
+use App\Jobs\PrepareDueOperationsReports;
 use App\Jobs\PrepareOperationsReport;
+use App\Models\OperationsReportConfiguration;
 use App\Models\User;
 use App\Services\BookingService;
 use Carbon\CarbonImmutable;
@@ -63,12 +65,28 @@ Schedule::job(new PrepareOperationsReport(OperationsReportPeriod::Morning))
     ->name('operations-report:morning')
     ->everyFiveMinutes()
     ->timezone((string) config('app.business_timezone'))
-    ->when(fn (): bool => OperationsReportPeriod::Morning->shouldPrepare(now()))
+    ->when(function (): bool {
+        $period = OperationsReportPeriod::Morning;
+
+        return $period->shouldPrepare(now())
+            && OperationsReportConfiguration::forVisitDate($period->targetDate(now())) === null;
+    })
     ->withoutOverlapping(10);
 
 Schedule::job(new PrepareOperationsReport(OperationsReportPeriod::Afternoon))
     ->name('operations-report:afternoon')
     ->everyFiveMinutes()
     ->timezone((string) config('app.business_timezone'))
-    ->when(fn (): bool => OperationsReportPeriod::Afternoon->shouldPrepare(now()))
+    ->when(function (): bool {
+        $period = OperationsReportPeriod::Afternoon;
+
+        return $period->shouldPrepare(now())
+            && OperationsReportConfiguration::forVisitDate($period->targetDate(now())) === null;
+    })
+    ->withoutOverlapping(10);
+
+Schedule::job(new PrepareDueOperationsReports)
+    ->name('operations-report:configured')
+    ->everyFiveMinutes()
+    ->timezone((string) config('app.business_timezone'))
     ->withoutOverlapping(10);

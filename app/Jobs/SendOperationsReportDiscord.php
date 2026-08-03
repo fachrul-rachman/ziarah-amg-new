@@ -56,7 +56,7 @@ class SendOperationsReportDiscord implements ShouldQueue
                 $dispatch->bookings()->cursor(),
                 $dispatch->report_date->toDateString(),
             );
-            $filename = "laporan-ziarah-{$dispatch->report_date->toDateString()}-{$dispatch->period->value}.xlsx";
+            $filename = "laporan-ziarah-{$dispatch->report_date->toDateString()}-{$dispatch->period}.xlsx";
             $fileContents = file_get_contents($path);
 
             if ($fileContents === false) {
@@ -64,10 +64,10 @@ class SendOperationsReportDiscord implements ShouldQueue
             }
 
             $content = implode("\n", [
-                "**{$dispatch->period->title()}**",
+                "**{$dispatch->title()}**",
                 "Tanggal: {$dispatch->report_date->toDateString()}",
-                'Waktu: '.substr($dispatch->period->startTime(), 0, 5)
-                    .' sampai '.substr($dispatch->period->endTime(), 0, 5).' WIB',
+                'Waktu: '.substr($dispatch->startTime(), 0, 5)
+                    .' sampai '.substr($dispatch->endTime(), 0, 5).' WIB',
                 "Jumlah: {$count} booking",
             ]);
 

@@ -2,7 +2,6 @@
 
 namespace App\Mail;
 
-use App\Enums\OperationsReportPeriod;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Attachment;
@@ -16,14 +15,17 @@ class OperationsReportMail extends Mailable
     public function __construct(
         public string $reportPath,
         public string $reportDate,
-        public OperationsReportPeriod $period,
+        public string $period,
         public int $bookingCount,
+        public string $periodTitle,
+        public string $startTime,
+        public string $endTime,
     ) {}
 
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: "{$this->period->title()} - {$this->reportDate}",
+            subject: "{$this->periodTitle} - {$this->reportDate}",
         );
     }
 
@@ -40,7 +42,7 @@ class OperationsReportMail extends Mailable
     {
         return [
             Attachment::fromPath($this->reportPath)
-                ->as("laporan-ziarah-{$this->reportDate}-{$this->period->value}.xlsx")
+                ->as("laporan-ziarah-{$this->reportDate}-{$this->period}.xlsx")
                 ->withMime('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'),
         ];
     }

@@ -2,6 +2,7 @@
 
 use App\Enums\BookingStatus;
 use App\Models\Booking;
+use App\Models\OperationsReportConfiguration;
 use App\Models\Setting;
 use App\Models\TimeSlot;
 use App\Models\Zone;
@@ -123,6 +124,21 @@ test('available slots apply the exact 18 hour boundary', function () {
         ->assertJsonPath('slots.1.start_time', '10:00')
         ->assertJsonPath('slots.1.is_available', true)
         ->assertJsonPath('slots.1.disabled_reason', null);
+});
+
+test('available slots apply the lead time configured for the visit date', function () {
+    OperationsReportConfiguration::query()->create([
+        'effective_from' => '2026-07-30',
+        'minimum_lead_hours' => 19,
+        'report_schedules' => [['day_offset' => -1, 'time' => '15:00']],
+    ]);
+
+    $this->getJson('/api/public/available-slots?date=2026-07-30')
+        ->assertOk()
+        ->assertJsonPath('minimum_lead_hours', 19)
+        ->assertJsonPath('slots.1.start_time', '10:00')
+        ->assertJsonPath('slots.1.is_available', false)
+        ->assertJsonPath('slots.1.disabled_reason', 'minimum_lead_time');
 });
 
 test('available slots are disabled when the selected date is full', function () {

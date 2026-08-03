@@ -1,4 +1,5 @@
 import { Head, useForm } from '@inertiajs/react';
+import { Plus, Trash2 } from 'lucide-react';
 import type { FormEvent, ReactNode } from 'react';
 
 import AdminLayout from '@/layouts/admin-layout';
@@ -12,9 +13,20 @@ type SettingsData = {
     discord_webhook_configured: boolean;
     discord_webhook_masked: string | null;
     embed_allowed_origins: string[];
+    minimum_lead_hours: number;
+    report_schedules: ReportSchedule[];
+    report_settings_effective_from: string | null;
 };
 
-export default function Settings({ settings }: { settings: SettingsData }) {
+type ReportSchedule = { day_offset: -1 | 0; time: string };
+
+export default function Settings({
+    settings,
+    visit_times,
+}: {
+    settings: SettingsData;
+    visit_times: string[];
+}) {
     const form = useForm({
         booking_window_days: String(settings.booking_window_days),
         booking_limit_mode: settings.booking_limit_mode,
@@ -30,6 +42,8 @@ export default function Settings({ settings }: { settings: SettingsData }) {
         discord_webhook: '',
         clear_discord_webhook: false,
         embed_allowed_origins: settings.embed_allowed_origins.join('\n'),
+        minimum_lead_hours: String(settings.minimum_lead_hours),
+        report_schedules: settings.report_schedules,
     });
 
     function submit(event: FormEvent<HTMLFormElement>) {
@@ -46,6 +60,7 @@ export default function Settings({ settings }: { settings: SettingsData }) {
                 .split('\n')
                 .map((origin) => origin.trim())
                 .filter(Boolean),
+            minimum_lead_hours: Number(data.minimum_lead_hours),
         }));
         form.put('/admin/settings', {
             preserveScroll: true,
@@ -59,6 +74,14 @@ export default function Settings({ settings }: { settings: SettingsData }) {
     const originError = Object.entries(form.errors).find(([key]) =>
         key.startsWith('embed_allowed_origins'),
     )?.[1];
+    const scheduleError = Object.entries(form.errors).find(([key]) =>
+        key.startsWith('report_schedules'),
+    )?.[1];
+    const preview = reportPreview(
+        Number(form.data.minimum_lead_hours),
+        form.data.report_schedules,
+        visit_times,
+    );
 
     return (
         <AdminLayout>
@@ -228,6 +251,192 @@ export default function Settings({ settings }: { settings: SettingsData }) {
                             </Field>
                         )}
 
+                        <div className="border-t border-slate-200 pt-6">
+                            <h2 className="text-base font-semibold">
+                                Waktu minimum dan laporan operasional
+                            </h2>
+                            <p className="mt-1 text-sm text-slate-600">
+                                Perubahan berlaku untuk tanggal kunjungan H+2
+                                agar laporan yang sedang berjalan tidak berubah.
+                            </p>
+                        </div>
+
+                        <Field
+                            label="Minimal waktu booking (jam)"
+                            id="minimum-lead-hours"
+                            error={form.errors.minimum_lead_hours}
+                        >
+                            <input
+                                id="minimum-lead-hours"
+                                type="number"
+                                min="1"
+                                required
+                                value={form.data.minimum_lead_hours}
+                                onChange={(event) =>
+                                    form.setData(
+                                        'minimum_lead_hours',
+                                        integerInput(event.target.value),
+                                    )
+                                }
+                                className="min-h-11 w-full rounded-lg border border-slate-300 px-3 outline-none focus:border-brand-primary focus:ring-3 focus:ring-sky-100"
+                            />
+                        </Field>
+
+                        <fieldset>
+                            <legend className="text-sm font-semibold">
+                                Jadwal pengiriman laporan
+                            </legend>
+                            <p className="mt-1 text-sm text-slate-600">
+                                Minimal 1 dan maksimal 3 jadwal. Laporan dikirim
+                                pada tick cron pertama setelah jeda 5 menit dari
+                                waktu ini.
+                            </p>
+                            <div className="mt-3 space-y-3">
+                                {form.data.report_schedules.map(
+                                    (schedule, index) => (
+                                        <div
+                                            key={index}
+                                            className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-[1fr_1fr_auto]"
+                                        >
+                                            <label className="text-sm font-medium">
+                                                Hari
+                                                <select
+                                                    value={schedule.day_offset}
+                                                    onChange={(event) => {
+                                                        const schedules = [
+                                                            ...form.data
+                                                                .report_schedules,
+                                                        ];
+                                                        schedules[index] = {
+                                                            ...schedule,
+                                                            day_offset: Number(
+                                                                event.target
+                                                                    .value,
+                                                            ) as -1 | 0,
+                                                        };
+                                                        form.setData(
+                                                            'report_schedules',
+                                                            schedules,
+                                                        );
+                                                    }}
+                                                    className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3"
+                                                >
+                                                    <option value={-1}>
+                                                        H-1 kunjungan
+                                                    </option>
+                                                    <option value={0}>
+                                                        Hari kunjungan
+                                                    </option>
+                                                </select>
+                                            </label>
+                                            <label className="text-sm font-medium">
+                                                Jam
+                                                <input
+                                                    type="time"
+                                                    required
+                                                    value={schedule.time}
+                                                    onChange={(event) => {
+                                                        const schedules = [
+                                                            ...form.data
+                                                                .report_schedules,
+                                                        ];
+                                                        schedules[index] = {
+                                                            ...schedule,
+                                                            time: event.target
+                                                                .value,
+                                                        };
+                                                        form.setData(
+                                                            'report_schedules',
+                                                            schedules,
+                                                        );
+                                                    }}
+                                                    className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3"
+                                                />
+                                            </label>
+                                            <button
+                                                type="button"
+                                                aria-label={`Hapus jadwal ${index + 1}`}
+                                                disabled={
+                                                    form.data.report_schedules
+                                                        .length === 1
+                                                }
+                                                onClick={() =>
+                                                    form.setData(
+                                                        'report_schedules',
+                                                        form.data.report_schedules.filter(
+                                                            (_, itemIndex) =>
+                                                                itemIndex !==
+                                                                index,
+                                                        ),
+                                                    )
+                                                }
+                                                className="min-h-11 self-end rounded-lg border border-slate-300 px-3 text-red-700 disabled:opacity-40"
+                                            >
+                                                <Trash2
+                                                    className="size-4"
+                                                    aria-hidden="true"
+                                                />
+                                            </button>
+                                        </div>
+                                    ),
+                                )}
+                            </div>
+                            {form.data.report_schedules.length < 3 && (
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        form.setData('report_schedules', [
+                                            ...form.data.report_schedules,
+                                            { day_offset: 0, time: '07:00' },
+                                        ])
+                                    }
+                                    className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-lg border border-slate-300 px-3 text-sm font-semibold"
+                                >
+                                    <Plus
+                                        className="size-4"
+                                        aria-hidden="true"
+                                    />
+                                    Tambah jadwal
+                                </button>
+                            )}
+                            {scheduleError && (
+                                <p
+                                    role="alert"
+                                    className="mt-2 text-sm text-red-700"
+                                >
+                                    {scheduleError}
+                                </p>
+                            )}
+                        </fieldset>
+
+                        {preview.length > 0 && (
+                            <div className="rounded-lg bg-slate-50 p-4">
+                                <h3 className="text-sm font-semibold">
+                                    Preview pembagian jam kunjungan
+                                </h3>
+                                <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                                    {preview.map((item, index) => (
+                                        <li key={`${item.label}-${index}`}>
+                                            {item.label}:{' '}
+                                            {item.times.length > 0
+                                                ? `${item.times.join(', ')} WIB`
+                                                : 'tidak mendapat jam kunjungan'}
+                                        </li>
+                                    ))}
+                                </ul>
+                                {settings.report_settings_effective_from && (
+                                    <p className="mt-2 text-xs text-slate-600">
+                                        Konfigurasi tersimpan saat ini berlaku
+                                        mulai{' '}
+                                        {
+                                            settings.report_settings_effective_from
+                                        }
+                                        .
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
                         <Field
                             label="Email laporan operasional"
                             id="operations-email"
@@ -350,6 +559,48 @@ export default function Settings({ settings }: { settings: SettingsData }) {
 
 function integerInput(value: string) {
     return value.replace(/^0+(?=\d)/, '');
+}
+
+function reportPreview(
+    leadHours: number,
+    schedules: ReportSchedule[],
+    visitTimes: string[],
+) {
+    if (!Number.isInteger(leadHours) || leadHours < 1) {
+        return [];
+    }
+
+    const referenceDay = 2 * 24 * 60;
+    const runs = schedules
+        .map((schedule) => ({
+            ...schedule,
+            minute:
+                referenceDay +
+                schedule.day_offset * 1440 +
+                timeMinutes(schedule.time),
+            times: [] as string[],
+        }))
+        .sort((a, b) => a.minute - b.minute);
+
+    for (const visitTime of visitTimes) {
+        const visitMinute = referenceDay + timeMinutes(visitTime);
+        const cutoff = visitMinute - leadHours * 60;
+        const run = runs.find(
+            (item) => item.minute >= cutoff && item.minute + 5 < visitMinute,
+        );
+        run?.times.push(visitTime);
+    }
+
+    return runs.map((run) => ({
+        label: `${run.day_offset === -1 ? 'H-1' : 'Hari H'} ${run.time}`,
+        times: run.times,
+    }));
+}
+
+function timeMinutes(time: string) {
+    const [hour, minute] = time.split(':').map(Number);
+
+    return hour * 60 + minute;
 }
 
 function Field({

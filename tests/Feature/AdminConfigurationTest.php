@@ -1,9 +1,11 @@
 <?php
 
+use App\Models\OperationsReportConfiguration;
 use App\Models\Setting;
 use App\Models\TimeSlot;
 use App\Models\User;
 use App\Models\Zone;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -11,6 +13,10 @@ uses(RefreshDatabase::class);
 beforeEach(function () {
     $this->withoutVite();
     $this->withSession(['_token' => 'test-token']);
+});
+
+afterEach(function () {
+    CarbonImmutable::setTestNow();
 });
 
 test('configuration pages are protected from guests', function (string $path) {
@@ -125,6 +131,7 @@ test('time slots reject non-hourly and duplicate values', function () {
 test('admin can store valid global settings without exposing the webhook', function () {
     $admin = User::factory()->create();
     $webhook = 'https://discord.com/api/webhooks/123/secret-token';
+    configurationReportSlot();
 
     $this->actingAs($admin)->put('/admin/settings', [
         '_token' => 'test-token',
@@ -139,6 +146,8 @@ test('admin can store valid global settings without exposing the webhook', funct
             'https://www.example.com',
             'http://localhost:3000',
         ],
+        'minimum_lead_hours' => 19,
+        'report_schedules' => [['day_offset' => -1, 'time' => '15:00']],
     ])->assertRedirect('/admin/settings');
 
     $setting = Setting::query()->sole();
@@ -154,6 +163,12 @@ test('admin can store valid global settings without exposing the webhook', funct
             'https://www.example.com',
             'http://localhost:3000',
         ])
+        ->and(OperationsReportConfiguration::query()->orderByDesc('effective_from')->firstOrFail()->minimum_lead_hours)->toBe(19)
+        ->and(OperationsReportConfiguration::query()->orderByDesc('effective_from')->firstOrFail()->report_schedules)->toBe([
+            ['day_offset' => -1, 'time' => '15:00'],
+        ])
+        ->and(OperationsReportConfiguration::query()->orderByDesc('effective_from')->firstOrFail()->effective_from->toDateString())
+        ->toBe(now('Asia/Jakarta')->addDays(2)->toDateString())
         ->and($setting->getRawOriginal('discord_webhook'))->not->toContain(
             'secret-token',
         );
@@ -167,12 +182,15 @@ test('admin can store valid global settings without exposing the webhook', funct
 
 test('blank webhook preserves it and explicit clear removes it', function () {
     $admin = User::factory()->create();
+    configurationReportSlot();
     $setting = Setting::query()->create([
         'id' => 1,
         'daily_booking_limit' => 20,
         'operations_email' => 'operations@example.com',
         'discord_webhook' => 'https://discord.com/api/webhooks/123/token',
         'embed_allowed_origins' => [],
+        'minimum_lead_hours' => 18,
+        'report_schedules' => [['day_offset' => -1, 'time' => '15:00']],
     ]);
 
     $payload = [
@@ -203,10 +221,41 @@ test('blank webhook preserves it and explicit clear removes it', function () {
     expect($setting->fresh()->discord_webhook)->toBeNull();
 });
 
+test('consecutive report setting changes preserve each effective visit date', function () {
+    OperationsReportConfiguration::query()->delete();
+    configurationReportSlot();
+    $admin = User::factory()->create();
+    $payload = [
+        '_token' => 'test-token',
+        'booking_window_days' => 7,
+        'booking_limit_mode' => 'daily',
+        'daily_booking_limit' => 30,
+        'hourly_booking_limit' => null,
+        'operations_email' => 'operations@example.com',
+        'discord_webhook' => null,
+        'clear_discord_webhook' => false,
+        'embed_allowed_origins' => [],
+        'minimum_lead_hours' => 19,
+        'report_schedules' => [['day_offset' => -1, 'time' => '15:00']],
+    ];
+
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-08-03 10:00:00', 'Asia/Jakarta'));
+    $this->actingAs($admin)->put('/admin/settings', $payload)->assertRedirect();
+
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-08-04 10:00:00', 'Asia/Jakarta'));
+    $payload['minimum_lead_hours'] = 20;
+    $this->actingAs($admin)->put('/admin/settings', $payload)->assertRedirect();
+
+    expect(OperationsReportConfiguration::forVisitDate('2026-08-04'))->toBeNull()
+        ->and(OperationsReportConfiguration::forVisitDate('2026-08-05')?->minimum_lead_hours)->toBe(19)
+        ->and(OperationsReportConfiguration::forVisitDate('2026-08-06')?->minimum_lead_hours)->toBe(20);
+});
+
 test('invalid global settings are rejected server side', function (
     array $change,
     string $errorKey,
 ) {
+    configurationReportSlot();
     $payload = [
         '_token' => 'test-token',
         'booking_window_days' => 100,
@@ -217,6 +266,8 @@ test('invalid global settings are rejected server side', function (
         'discord_webhook' => null,
         'clear_discord_webhook' => false,
         'embed_allowed_origins' => ['https://www.example.com'],
+        'minimum_lead_hours' => 18,
+        'report_schedules' => [['day_offset' => -1, 'time' => '15:00']],
         ...$change,
     ];
 
@@ -266,4 +317,21 @@ test('invalid global settings are rejected server side', function (
         ['embed_allowed_origins' => ['*']],
         'embed_allowed_origins.0',
     ],
+    'zero lead time' => [
+        ['minimum_lead_hours' => 0],
+        'minimum_lead_hours',
+    ],
+    'more than three report schedules' => [[
+        'report_schedules' => [
+            ['day_offset' => -1, 'time' => '12:00'],
+            ['day_offset' => -1, 'time' => '13:00'],
+            ['day_offset' => -1, 'time' => '14:00'],
+            ['day_offset' => -1, 'time' => '15:00'],
+        ],
+    ], 'report_schedules'],
 ]);
+
+function configurationReportSlot(): void
+{
+    TimeSlot::query()->create(['start_time' => '07:00', 'is_active' => true]);
+}

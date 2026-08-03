@@ -2,15 +2,19 @@
 
 use App\Enums\BookingStatus;
 use App\Enums\OperationsReportPeriod;
+use App\Jobs\PrepareDueOperationsReports;
 use App\Jobs\PrepareOperationsReport;
 use App\Jobs\SendOperationsReportDiscord;
 use App\Jobs\SendOperationsReportEmail;
 use App\Mail\OperationsReportMail;
 use App\Models\Booking;
+use App\Models\OperationsReportConfiguration;
 use App\Models\ReportDispatch;
 use App\Models\Setting;
+use App\Models\TimeSlot;
 use App\Models\Zone;
 use App\Services\BookingExcelExport;
+use App\Services\OperationsReportPlanner;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\RequestException;
@@ -150,7 +154,7 @@ test('afternoon preparation uses the current date and excludes morning bookings'
     expect(ReportDispatch::query()->sole()->report_date->toDateString())
         ->toBe('2026-07-30')
         ->and(ReportDispatch::query()->sole()->period)
-        ->toBe(OperationsReportPeriod::Afternoon);
+        ->toBe(OperationsReportPeriod::Afternoon->value);
 
     Queue::assertPushed(SendOperationsReportEmail::class, 1);
     Queue::assertNotPushed(SendOperationsReportDiscord::class);
@@ -173,6 +177,44 @@ test('empty report range sends nothing and creates no dispatch record', function
     Queue::assertNothingPushed();
 });
 
+test('configured reports send each visit slot only in its assigned schedule', function () {
+    Queue::fake();
+    foreach (range(7, 17) as $hour) {
+        TimeSlot::query()->create([
+            'start_time' => sprintf('%02d:00', $hour),
+            'is_active' => true,
+        ]);
+    }
+    OperationsReportConfiguration::query()->updateOrCreate(
+        ['effective_from' => '2026-07-31'],
+        [
+            'minimum_lead_hours' => 18,
+            'report_schedules' => [
+                ['day_offset' => -1, 'time' => '15:00'],
+                ['day_offset' => 0, 'time' => '07:00'],
+            ],
+        ],
+    );
+    CarbonImmutable::setTestNow(CarbonImmutable::parse(
+        '2026-07-31 07:05:00',
+        'Asia/Jakarta',
+    ));
+    phaseNineBooking(['visit_date' => '2026-07-31', 'visit_time' => '09:00:00']);
+    phaseNineBooking(['visit_date' => '2026-07-31', 'visit_time' => '10:00:00']);
+
+    (new PrepareDueOperationsReports)->handle(app(OperationsReportPlanner::class));
+    (new PrepareDueOperationsReports)->handle(app(OperationsReportPlanner::class));
+
+    $dispatch = ReportDispatch::query()->sole();
+    expect($dispatch->visit_times)->toBe([
+        '10:00:00', '11:00:00', '12:00:00', '13:00:00',
+        '14:00:00', '15:00:00', '16:00:00', '17:00:00',
+    ])
+        ->and($dispatch->bookings()->pluck('visit_time')->all())
+        ->toBe(['10:00:00']);
+    Queue::assertPushed(SendOperationsReportEmail::class, 1);
+});
+
 test('email delivery uses the configured single recipient and marks success', function () {
     Mail::fake();
     phaseNineBooking(['visit_date' => '2026-07-31', 'visit_time' => '09:00:00']);
@@ -187,7 +229,7 @@ test('email delivery uses the configured single recipient and marks success', fu
         OperationsReportMail::class,
         fn (OperationsReportMail $mail): bool => $mail->hasTo('operations@example.com')
             && $mail->bookingCount === 1
-            && $mail->period === OperationsReportPeriod::Morning
+            && $mail->period === OperationsReportPeriod::Morning->value
             && $mail->hasAttachment(
                 Attachment::fromPath($mail->reportPath)
                     ->as('laporan-ziarah-2026-07-31-morning_0700_1100.xlsx')
@@ -279,10 +321,11 @@ test('failed discord delivery is recorded safely and remains retryable', functio
         ->not->toContain('private-token');
 });
 
-test('scheduler reconciles only the two operational reports every five minutes', function () {
+test('scheduler reconciles legacy and configurable reports every five minutes', function () {
     $events = collect(Schedule::events())->keyBy('description');
     $morning = $events->get('operations-report:morning');
     $afternoon = $events->get('operations-report:afternoon');
+    $configured = $events->get('operations-report:configured');
 
     expect($morning)->not->toBeNull()
         ->and($morning->expression)->toBe('*/5 * * * *')
@@ -290,6 +333,9 @@ test('scheduler reconciles only the two operational reports every five minutes',
         ->and($afternoon)->not->toBeNull()
         ->and($afternoon->expression)->toBe('*/5 * * * *')
         ->and($afternoon->timezone)->toBe('Asia/Jakarta')
+        ->and($configured)->not->toBeNull()
+        ->and($configured->expression)->toBe('*/5 * * * *')
+        ->and($configured->timezone)->toBe('Asia/Jakarta')
         ->and($events)->not->toHaveKey('operations-report:morning-final');
 });
 
@@ -338,7 +384,7 @@ function phaseNineDispatch(
 ): ReportDispatch {
     return ReportDispatch::query()->create([
         'report_date' => $date,
-        'period' => $period,
+        'period' => $period->value,
         'channel' => $channel,
         'status' => 'pending',
     ]);

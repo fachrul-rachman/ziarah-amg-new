@@ -93,6 +93,7 @@ class PublicAvailabilityController extends Controller
 
         return response()->json([
             'date' => $date,
+            'minimum_lead_hours' => $this->bookings->minimumLeadHours($date),
             ...$availability,
         ]);
     }
