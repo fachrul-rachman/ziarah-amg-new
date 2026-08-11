@@ -41,17 +41,15 @@ class BookingExcelExport
         ?string $dateTo = null,
     ): void {
         $options = new Options;
-        $options->mergeCells(0, 1, 9, 1);
+        $options->mergeCells(0, 1, 7, 1);
         $options->setColumnWidth(17, 1);
         $options->setColumnWidth(10, 2);
         $options->setColumnWidth(18, 3);
         $options->setColumnWidth(16, 4);
         $options->setColumnWidth(24, 5);
-        $options->setColumnWidth(30, 6);
-        $options->setColumnWidth(19, 7);
-        $options->setColumnWidth(24, 8);
-        $options->setColumnWidth(36, 9);
-        $options->setColumnWidth(31, 10);
+        $options->setColumnWidth(24, 6);
+        $options->setColumnWidth(36, 7);
+        $options->setColumnWidth(31, 8);
 
         $writer = new Writer($options);
         $writer->openToFile($path);
@@ -74,8 +72,6 @@ class BookingExcelExport
                 null,
                 null,
                 null,
-                null,
-                null,
             ],
             $this->titleStyle(),
         )->setHeight(30);
@@ -87,8 +83,6 @@ class BookingExcelExport
             'Zona',
             'Nomor lot',
             'Nama Pemesan',
-            'Email',
-            'Nomor Telfon',
             'Nama Alm/Ah',
             'Catatan',
             'Fasilitas (Tenda, jumlah kursi)',
@@ -99,15 +93,12 @@ class BookingExcelExport
         foreach ($bookings as $booking) {
             $rowStyle = $this->bodyStyle($index % 2 === 1);
             $dateStyle = (new Style)->setFormat('dd/mm/yyyy');
-            $phoneStyle = (clone $rowStyle)->setFormat('@');
             $row = Row::fromValuesWithStyles([
                 $booking->visit_date,
                 substr($booking->visit_time, 0, 5),
                 $this->safeText($booking->zone_name_snapshot),
                 $this->safeText($booking->lot_number),
                 $this->safeText($booking->customer_name),
-                $this->safeText($booking->customer_email),
-                $this->safeText($booking->customer_phone),
                 $this->safeText($booking->deceased_name),
                 $this->safeText($booking->additional_notes),
                 sprintf(
@@ -115,7 +106,7 @@ class BookingExcelExport
                     $booking->tent_required ? 'Ya' : 'Tidak',
                     $booking->chair_count,
                 ),
-            ], $rowStyle, [0 => $dateStyle, 6 => $phoneStyle]);
+            ], $rowStyle, [0 => $dateStyle]);
             $writer->addRow($row);
             $index++;
         }

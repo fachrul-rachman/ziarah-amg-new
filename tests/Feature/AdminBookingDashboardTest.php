@@ -293,8 +293,6 @@ test('excel export follows filters and neutralises spreadsheet formulas', functi
             'Zona',
             'Nomor lot',
             'Nama Pemesan',
-            'Email',
-            'Nomor Telfon',
             'Nama Alm/Ah',
             'Catatan',
             'Fasilitas (Tenda, jumlah kursi)',
@@ -304,6 +302,8 @@ test('excel export follows filters and neutralises spreadsheet formulas', functi
         ->toContain('\'+SUM(1,1)')
         ->toContain('\'@danger')
         ->toContain('Tenda: Tidak | Jumlah kursi: 2')
+        ->not->toContain('customer@example.com')
+        ->not->toContain('08123456789')
         ->not->toContain('Tidak Diekspor');
 });
 
