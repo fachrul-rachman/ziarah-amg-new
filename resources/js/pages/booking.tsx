@@ -931,7 +931,7 @@ function FacilitiesStep({
                 description="Pilih fasilitas yang Anda butuhkan"
             />
             <fieldset>
-                <legend className={fieldLabelClass}>Jumlah item</legend>
+                <legend className={fieldLabelClass}>Jumlah kursi</legend>
                 <input
                     id="chair-count"
                     type="number"
@@ -939,7 +939,8 @@ function FacilitiesStep({
                     max="500"
                     step="1"
                     inputMode="numeric"
-                    value={data.chair_count}
+                    value={data.chair_count === 0 ? '' : data.chair_count}
+                    placeholder="0"
                     aria-label="Jumlah kursi"
                     aria-invalid={Boolean(chairError)}
                     aria-describedby={
